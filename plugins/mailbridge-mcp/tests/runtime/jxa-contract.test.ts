@@ -123,6 +123,116 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
+  it("pushes supported metadata filters into Mail before scanning messages", () => {
+    const message = {
+      id: "message-1",
+      subject: "Barclays account update",
+      sender: "alerts@barclays.example",
+      messageId: "rfc@example.com",
+      dateReceived: new Date("2026-07-16T08:00:00.000Z"),
+      readStatus: false,
+      flaggedStatus: true,
+    };
+    const filteredMessages = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === "0") return message;
+        if (property === "1") return undefined;
+        if (property === "id") throw new Error("eager identity enumeration is forbidden");
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const predicates: unknown[] = [];
+    const messages = Object.assign(() => undefined, {
+      whose(predicate: unknown) {
+        predicates.push(predicate);
+        return filteredMessages;
+      },
+    });
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(
+      request("searchMessages", {
+        mailbox: { accountKey: "account-1", path: ["Inbox"] },
+        query: "barclays",
+        from: "Barclays",
+        subject: "account",
+        unread: true,
+        flagged: true,
+        dateFrom: "2026-07-16T00:00:00.000Z",
+        dateTo: "2026-07-17T00:00:00.000Z",
+        limit: 5,
+      }),
+    );
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1", subject: "Barclays account update" }],
+        scannedCount: 1,
+        incomplete: false,
+      },
+    });
+    expect(predicates).toHaveLength(1);
+    expect(JSON.stringify(predicates[0])).toContain("readStatus");
+    expect(JSON.stringify(predicates[0])).toContain("flaggedStatus");
+    expect(JSON.stringify(predicates[0])).toContain("sender");
+    expect(JSON.stringify(predicates[0])).toContain("subject");
+    expect(JSON.stringify(predicates[0])).toContain("_contains");
+    expect(JSON.stringify(predicates[0])).toContain("dateReceived");
+    expect(JSON.stringify(predicates[0])).toContain("_greaterThan");
+    expect(JSON.stringify(predicates[0])).toContain("_lessThan");
+  });
+
+  it("falls back to the bounded indexed scan when Mail rejects a native predicate", () => {
+    const message = {
+      id: "message-1",
+      subject: "Account update",
+      sender: "alerts@example.com",
+      messageId: "rfc@example.com",
+      readStatus: false,
+      flaggedStatus: false,
+    };
+    const rejectedNativeCollection = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === "0") throw new Error("predicate unsupported");
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const messages = new Proxy(
+      Object.assign(() => undefined, {
+        whose() {
+          return rejectedNativeCollection;
+        },
+      }),
+      {
+        get(target, property, receiver) {
+          if (property === "0") return message;
+          if (property === "1") return undefined;
+          return Reflect.get(target, property, receiver) as unknown;
+        },
+      },
+    );
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(
+      request("searchMessages", {
+        mailbox: { accountKey: "account-1", path: ["Inbox"] },
+        subject: "account",
+        unread: true,
+        limit: 5,
+      }),
+    );
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1", subject: "Account update" }],
+        scannedCount: 1,
+        incomplete: false,
+      },
+    });
+  });
+
   it("fails closed when one allowlisted address belongs to multiple Mail accounts", () => {
     const runtime = harness([
       account("personal", ["shared@example.com"]),

@@ -225,6 +225,14 @@ function resolveMessage(locator, policy) {
 function collectionItem(object, name, index) {
   try {
     var collection = object[name];
+    return collectionValueItem(collection, index);
+  } catch (_) {
+    return { status: "error" };
+  }
+}
+
+function collectionValueItem(collection, index) {
+  try {
     if (collection === null || collection === undefined) return { status: "error" };
     var item = collection[index];
     if ((item === null || item === undefined) && typeof collection.at === "function") {
@@ -452,6 +460,45 @@ function matchesSearch(message, input) {
   return true;
 }
 
+function nativeSearchPredicate(input) {
+  var conditions = [];
+  if (input.unread === true) conditions.push({ readStatus: false });
+  if (input.flagged === true) conditions.push({ flaggedStatus: true });
+  if (input.from) conditions.push({ sender: { _contains: input.from } });
+  if (input.subject) conditions.push({ subject: { _contains: input.subject } });
+  if (input.dateFrom) {
+    var lowerBound = new Date(input.dateFrom);
+    if (!isNaN(lowerBound.getTime())) {
+      conditions.push({ dateReceived: { _greaterThan: new Date(lowerBound.getTime() - 1) } });
+    }
+  }
+  if (input.dateTo) {
+    var upperBound = new Date(input.dateTo);
+    if (!isNaN(upperBound.getTime())) {
+      conditions.push({ dateReceived: { _lessThan: upperBound } });
+    }
+  }
+  if (conditions.length === 0) return null;
+  return conditions.length === 1 ? conditions[0] : { _and: conditions };
+}
+
+function searchMessageCollection(mailbox, input) {
+  var messages;
+  try {
+    messages = mailbox.messages;
+  } catch (_) {
+    return { messages: null };
+  }
+  var predicate = nativeSearchPredicate(input);
+  if (!predicate || !messages || typeof messages.whose !== "function") return { messages: messages };
+  try {
+    return { messages: messages.whose(predicate), fallbackMessages: messages };
+  } catch (_) {
+    // Mail versions that reject a native predicate retain the bounded indexed fallback.
+    return { messages: messages };
+  }
+}
+
 function searchMessagesOperation(request) {
   var input = requireObject(request.input, "input");
   var limit = Math.min(Number(input.limit) || 25, request.policy.maxResults, 100);
@@ -490,7 +537,14 @@ function searchMessagesOperation(request) {
   var mailboxScans = [];
   for (var selectedMailboxIndex = 0; selectedMailboxIndex < selectedMailboxes.length; selectedMailboxIndex += 1) {
     var selectedMailbox = selectedMailboxes[selectedMailboxIndex];
-    mailboxScans.push({ selectedMailbox: selectedMailbox, index: 0, done: false });
+    var messageCollection = searchMessageCollection(selectedMailbox.mailbox, input);
+    mailboxScans.push({
+      selectedMailbox: selectedMailbox,
+      messages: messageCollection.messages,
+      fallbackMessages: messageCollection.fallbackMessages,
+      index: 0,
+      done: false,
+    });
   }
 
   // Round-robin across mailboxes so one large archive cannot consume the entire
@@ -502,13 +556,21 @@ function searchMessagesOperation(request) {
       var scan = mailboxScans[scanIndex];
       if (scan.done) continue;
       hasMore = true;
-      var access = collectionItem(scan.selectedMailbox.mailbox, "messages", scan.index);
+      var access = collectionValueItem(scan.messages, scan.index);
       scan.index += 1;
       if (access.status === "end") {
         scan.done = true;
         continue;
       }
       if (access.status === "error") {
+        if (scan.fallbackMessages) {
+          // JXA may defer predicate evaluation until the first collection access.
+          // Retry once against the original collection without widening the scan budget.
+          scan.messages = scan.fallbackMessages;
+          scan.fallbackMessages = null;
+          scan.index = 0;
+          continue;
+        }
         scan.done = true;
         skipped = true;
         continue;
