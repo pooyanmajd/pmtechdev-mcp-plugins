@@ -80,7 +80,7 @@ Mailboxes and messages can change between calls. Mailbridge favors explicit `NOT
 ## Resource controls
 
 - Search defaults are bounded and results can never exceed 100.
-- Search accesses message collections by index rather than eagerly materializing an entire mailbox. Results include `scannedCount` and `incomplete`; incomplete searches must be narrowed before treating absence as conclusive.
+- Search accesses message collections by index rather than eagerly materializing an entire mailbox. Supported metadata filters are pushed into Mail.app first and then rechecked by the bridge; Mail versions that reject a native predicate use the same bounded indexed fallback. Results include `scannedCount` and `incomplete`; incomplete searches must be narrowed before treating absence as conclusive.
 - Full bodies are capped by configured character count.
 - Attachment metadata and serialized tool results are bounded.
 - Every automation process has a configured timeout.

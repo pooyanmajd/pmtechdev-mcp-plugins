@@ -8,7 +8,9 @@ While the workspace is pre-1.0, only the latest release of each plugin and the c
 
 ## Report a vulnerability
 
-Email **pooyanmjd@gmail.com** with the subject `PMTechDev plugin security report`. Do not open a public issue or include real connected content, credentials, tokens, private identifiers, or other people's personal information.
+Use GitHub's [private vulnerability reporting](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/security/advisories/new). If that is unavailable, email **pooyanmjd@gmail.com** with the subject `PMTechDev plugin security report`.
+
+Do not open a public issue or include real connected content, credentials, tokens, private identifiers, or other people's personal information. Please allow a reasonable opportunity to investigate and coordinate a fix before public disclosure.
 
 Include, where safe:
 
