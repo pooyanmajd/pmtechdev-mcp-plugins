@@ -6,6 +6,7 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 - Hardened public contribution and repository governance with protected-branch guidance, code ownership, pinned GitHub Actions, CodeQL, dependency review, and private vulnerability reporting.
 - Improved Mailbridge search responsiveness by pushing supported metadata filters into Mail.app without weakening scan bounds or compatibility fallback behavior.
+- Pinned the workspace build toolchain to patched esbuild 0.28.1 to remove the development-server file-read advisory.
 
 ## [0.1.0] - 2026-07-16
 
