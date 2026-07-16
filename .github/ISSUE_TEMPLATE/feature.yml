@@ -1,50 +1,41 @@
-name: Feature request
-description: Propose a focused improvement that preserves Mailbridge's safety boundary.
-title: "[Feature]: "
+name: Feature or plugin proposal
+description: Propose a focused plugin, shared primitive, or improvement.
+title: "[Proposal]: "
 labels: [enhancement, triage]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Describe the user problem before proposing an API. Permanent deletion, arbitrary scripting, private Mail database access, remote hosting, credential management, hidden telemetry, and background monitoring are intentionally out of scope.
-
   - type: textarea
     id: problem
     attributes:
       label: User problem
-      description: What safe workflow is difficult today?
+      description: Describe the workflow before proposing an API.
     validations:
       required: true
-
   - type: textarea
-    id: proposal
+    id: scope
     attributes:
-      label: Proposed behavior
-      description: Include bounded inputs, outputs, and error behavior without private email examples.
+      label: Proposed scope and non-goals
     validations:
       required: true
-
   - type: textarea
-    id: alternatives
+    id: reuse
     attributes:
-      label: Alternatives considered
+      label: Reuse plan
+      description: Explain what belongs in the plugin versus @pmtechdev/mcp-kit.
     validations:
       required: true
-
   - type: textarea
     id: security
     attributes:
       label: Security and privacy impact
-      description: Explain new data access, trust boundaries, mutations, external effects, and least-privilege controls.
+      description: Cover authentication, data, mutations, external effects, bounds, and revocation.
     validations:
       required: true
-
   - type: checkboxes
-    id: scope
+    id: checks
     attributes:
-      label: Scope checks
+      label: Design checks
       options:
-        - label: The proposal preserves local STDIO and read-only-by-default behavior.
+        - label: The proposal is least-privilege and read-only by default where possible.
           required: true
-        - label: The proposal does not require copying or inspecting another Apple Mail MCP implementation.
+        - label: The proposal avoids arbitrary scripting, hidden telemetry, and credential harvesting.
           required: true

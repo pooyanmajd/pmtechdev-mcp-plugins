@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
+import { BoundedSerialQueue } from "@pmtechdev/mcp-kit";
 
 import type { MailbridgeConfig } from "../config.js";
 import { MailbridgeError, toPublicError } from "../errors.js";
@@ -54,8 +55,7 @@ function parseInput<T extends z.ZodType>(schema: T, input: unknown): z.output<T>
 }
 
 export class MailbridgeToolService {
-  private mutationTail: Promise<void> = Promise.resolve();
-  private queuedMutations = 0;
+  private readonly mutationQueue = new BoundedSerialQueue(MAX_QUEUED_MUTATIONS);
 
   public constructor(
     private readonly bridge: MailBridge,
@@ -83,33 +83,21 @@ export class MailbridgeToolService {
   }
 
   private async runMutation<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.queuedMutations >= MAX_QUEUED_MUTATIONS) {
-      throw new MailbridgeError("AUTOMATION_BUSY");
-    }
-    this.queuedMutations += 1;
-    const previous = this.mutationTail;
-    let release = (): void => undefined;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.mutationTail = previous.then(() => current);
-    await previous;
-    try {
-      return await operation();
-    } catch (error: unknown) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "TIMEOUT"
-      ) {
-        throw new MailbridgeError("MUTATION_OUTCOME_UNKNOWN");
+    return this.mutationQueue.run(async () => {
+      try {
+        return await operation();
+      } catch (error: unknown) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "TIMEOUT"
+        ) {
+          throw new MailbridgeError("MUTATION_OUTCOME_UNKNOWN");
+        }
+        throw error;
       }
-      throw error;
-    } finally {
-      this.queuedMutations -= 1;
-      release();
-    }
+    }, () => new MailbridgeError("AUTOMATION_BUSY"));
   }
 
   private async execute(name: ToolName, rawInput: unknown): Promise<unknown> {

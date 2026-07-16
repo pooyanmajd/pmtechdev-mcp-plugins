@@ -1,73 +1,59 @@
 name: Bug report
-description: Report a reproducible Mailbridge defect using synthetic or redacted data.
+description: Report a reproducible PMTechDev plugin or shared-kit defect using synthetic data.
 title: "[Bug]: "
 labels: [bug, triage]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a problem. Never paste real email bodies, credentials, tokens, account IDs, private addresses, or vulnerable details here. Report security issues privately using SECURITY.md.
-
+        Never paste connected content, credentials, tokens, account IDs, private addresses, or vulnerability details. Report security issues privately through SECURITY.md.
+  - type: input
+    id: component
+    attributes:
+      label: Plugin or package
+      placeholder: mailbridge-mcp or @pmtechdev/mcp-kit
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
-      label: Mailbridge version or commit
+      label: Version or commit
       placeholder: v0.1.0 or commit SHA
     validations:
       required: true
-
   - type: input
     id: environment
     attributes:
       label: Environment
-      description: Provide macOS, Node.js, and MCP client versions.
       placeholder: macOS 15.x; Node 20.x; Codex version …
     validations:
       required: true
-
-  - type: dropdown
-    id: mode
-    attributes:
-      label: Mode
-      options:
-        - read-only
-        - drafts
-        - full
-        - unknown
-    validations:
-      required: true
-
   - type: textarea
     id: reproduce
     attributes:
-      label: Minimal reproduction
-      description: Use synthetic data and exact safe steps. Do not reproduce against someone else's mailbox.
+      label: Minimal synthetic reproduction
     validations:
       required: true
-
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
     validations:
       required: true
-
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior and sanitized error code
-      description: Remove message content, addresses, IDs, paths, environment values, and stack traces.
+      label: Actual behavior and sanitized error
     validations:
       required: true
-
   - type: checkboxes
     id: safety
     attributes:
       label: Safety checks
       options:
-        - label: I removed personal information, email content, credentials, tokens, opaque IDs, and secrets.
+        - label: I removed personal data, connected content, credentials, tokens, IDs, and private paths.
           required: true
         - label: This report does not disclose a security vulnerability.
           required: true
-        - label: No email was sent, moved, deleted, or otherwise mutated while reproducing this issue.
+        - label: I did not mutate a real connected system while reproducing this issue.
           required: true

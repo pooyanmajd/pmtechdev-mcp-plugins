@@ -15,9 +15,9 @@ concurrency:
 
 jobs:
   verify:
-    name: Node 20 / macOS
+    name: Workspace / Node 20 / macOS
     runs-on: macos-14
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       MAILBRIDGE_MODE: read-only
       CI: "true"
@@ -32,32 +32,25 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install locked dependencies
+      - name: Install locked workspace dependencies
         run: npm ci
 
-      - name: Run checks
+      - name: Run workspace checks
         run: npm run check
 
-      - name: Validate fixed JXA dispatcher
-        run: node --check runtime/mailbridge.jxa.js && osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" runtime/mailbridge.jxa.js
+      - name: Audit published dependency surface
+        run: npm audit --omit=dev
 
-      - name: Validate plugin package metadata
-        run: npm run validate:package
+      - name: Validate Mailbridge JXA
+        run: node --check plugins/mailbridge-mcp/runtime/mailbridge.jxa.js && osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
 
-      - name: Build distributable
-        run: npm run build
+      - name: Verify committed plugin bundles are current
+        run: git diff --exit-code -- plugins/*/dist
 
-      - name: Verify runtime payload exists
-        run: test -f dist/cli.js && test -f runtime/mailbridge.jxa.js
+      - name: Inspect Mailbridge package contents
+        run: npm run pack:dry-run -w mailbridge-mcp
 
-      - name: Verify committed bundle is current
-        run: git diff --exit-code -- dist
+      - name: Confirm Mailbridge stays read-only in CI with no send surface
+        run: test "$MAILBRIDGE_MODE" = "read-only" && ! grep -qE 'mail_send_draft|Mail\.send|sendDraft' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
 
-      - name: Inspect package contents
-        run: npm run pack:dry-run
-
-      - name: Confirm CI is read-only and the bundle has no send surface
-        run: test "$MAILBRIDGE_MODE" = "read-only" && ! grep -qE 'mail_send_draft|Mail\\.send|sendDraft' runtime/mailbridge.jxa.js dist/cli.js
-
-# CI deliberately does not launch Mail.app, invoke osascript, request Automation
-# permission, enable live integration tests, or operate a real mailbox.
+# CI never requests live connector credentials or macOS Automation permission.

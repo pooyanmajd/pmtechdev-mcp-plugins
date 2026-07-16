@@ -1,48 +1,39 @@
-# Privacy policy
+# PMTechDev MCP & Plugins privacy policy
 
 Effective: 2026-07-16
 
-Mailbridge MCP is local-only open-source software. The project does not operate a hosted Mailbridge service, user account system, analytics endpoint, telemetry collector, advertising system, or data broker.
+This repository contains open-source MCP servers and Codex plugins. PMTechDev does not operate a shared user account system, analytics endpoint, telemetry collector, advertising system, or data broker for these plugins unless a future integration explicitly documents otherwise.
 
-## Data Mailbridge can process
+## Data plugins can process
 
-At your direction and within its configured policy, Mailbridge can ask Mail.app for:
+Each plugin documents its own data surface. The current Mailbridge plugin can process account and mailbox metadata, message metadata and selected content, downloaded attachments, draft content, and read or flagged state at the user's direction.
 
-- account and mailbox display metadata;
-- message metadata, headers, and selected bounded body content;
-- attachment metadata and selected attachment content;
-- draft recipients, subjects, and bodies;
-- read and flagged state.
-
-This information can be personal, confidential, or legally protected. Use the narrowest account scope and query that meets your need.
+Connected information can be personal, confidential, or legally protected. Use the narrowest plugin, account or resource scope, query, and result size that meets your need.
 
 ## Where data goes
 
-Mailbridge communicates with its MCP client over local STDIO and with Mail.app through macOS Automation. It does not add an application-level network destination. Mail.app may communicate with your email providers under the accounts and policies you configured in Mail.app. Your MCP client or model provider may separately receive tool inputs and results according to that product's settings and privacy terms; Mailbridge does not control those systems.
+Plugins communicate with their MCP client and the systems named in their documentation. Mailbridge uses local STDIO and macOS Automation and adds no application-level network destination. Connected applications may communicate with their providers.
 
-Before using a cloud-hosted model with Mailbridge, decide whether the selected email may be sent to that provider. Consider local models or stricter client data controls for sensitive mail.
+Your MCP client or model provider may separately receive tool inputs and results according to that product's settings and privacy terms. Before using a cloud-hosted model, decide whether selected connected data may be sent to that provider.
 
 ## Storage and retention
 
-Mailbridge does not maintain its own message database, credentials store, analytics history, or background index. Mail.app, the MCP client, terminal capture, system logs, model-provider history, crash tooling, and drafts created in Mail.app may retain data independently. Consult those products' controls and delete retained data there when appropriate.
+Plugins must document storage they create. Mailbridge maintains no message database, credentials store, analytics history, or background index. Connected applications, MCP clients, terminals, system logs, model-provider history, and crash tooling may retain data independently.
 
 ## Credentials
 
-Mailbridge does not request or manage email passwords, app passwords, OAuth tokens, or provider API keys. Authentication remains with Mail.app and the configured email provider. Do not place secrets in Mailbridge environment variables or bug reports.
+No plugin may harvest credentials. When authentication is required, the plugin documentation must identify the mechanism, storage owner, scopes, and revocation path. Never put secrets in repository files, process arguments, logs, fixtures, or bug reports.
 
 ## User controls
 
-- Keep `MAILBRIDGE_MODE=read-only` unless a write workflow is necessary.
-- Set `MAILBRIDGE_ALLOWED_ACCOUNTS` to limit visible accounts.
-- Bound searches and retrieve full messages or attachments only when needed.
-- Review and send generated drafts manually in Mail.app; Mailbridge v0.1 has no send tool.
-- Revoke the host application's access to Mail under **System Settings → Privacy & Security → Automation**.
-- Remove the MCP configuration or plugin to stop using Mailbridge.
+- Keep plugins in read-only or least-privilege mode unless a write workflow is necessary.
+- Configure allowlists and retrieve full records or attachments only when needed.
+- Review mutations and open-world effects.
+- Revoke connector, provider, or OS permissions when no longer needed.
+- Remove the MCP configuration or plugin to stop using it.
 
-## Children's data and regulated use
+## Regulated use
 
-Mailbridge is a general developer tool and is not directed to children. It provides no compliance guarantee for health, financial, employment, educational, legal, export-controlled, or other regulated data. You are responsible for determining whether your use, MCP client, and model provider satisfy applicable policies and law.
+These are general developer tools and provide no compliance guarantee for health, financial, employment, educational, legal, export-controlled, or other regulated data. You are responsible for determining whether your use and model provider meet applicable requirements.
 
-## Changes and contact
-
-Material changes will be recorded in the repository history and, when appropriate, the changelog. Questions can be sent to **pooyanmjd@gmail.com**. Report vulnerabilities according to [SECURITY.md](SECURITY.md), not through a public issue.
+Questions can be sent to **pooyanmjd@gmail.com**. Report vulnerabilities according to [SECURITY.md](SECURITY.md).

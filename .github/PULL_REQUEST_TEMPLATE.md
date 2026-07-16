@@ -1,36 +1,33 @@
 ## Summary
 
-<!-- Explain the user-facing problem and the smallest solution. -->
+<!-- Explain the user-facing problem and smallest solution. -->
 
-## Changes
+## Component
 
-- <!-- Describe one concrete change. -->
+<!-- Name the plugin, shared package, template, or workspace tooling changed. -->
 
 ## Verification
 
 - [ ] `npm ci`
 - [ ] `npm run check`
-- [ ] `dist/` is rebuilt and committed when source changes affect the runtime.
-- [ ] `npm run pack:dry-run`
-- [ ] Tests use synthetic fixtures and the fake bridge.
-- [ ] No live email was sent, moved, deleted, drafted, flagged, or marked.
+- [ ] Affected committed `dist/` bundles were rebuilt.
+- [ ] Affected plugin package dry-runs and validators passed.
+- [ ] Tests use synthetic data and deterministic fakes.
 
 ## Security and privacy
 
-<!-- Describe data accessed, trust-boundary changes, mutations, limits, errors, and external effects. Write “No change” only with an explanation. -->
+<!-- Describe authentication, data, trust boundaries, mutations, limits, retry behavior, and external effects. -->
 
-- [ ] Read-only remains the default.
-- [ ] No sending operation was introduced; any proposal to add one includes a separately reviewed exact-draft verification design.
-- [ ] No credentials, account identifiers, real email, private paths, raw scripts, environment values, or stack traces were added.
-- [ ] User/model input is not interpolated into AppleScript or JXA source.
-- [ ] Public documentation and tool cases are updated if the contract changed.
+- [ ] Read-only or least-privilege behavior remains the default.
+- [ ] No credentials, connected content, private IDs, paths, environment values, or stack traces were added.
+- [ ] Input is not interpolated into executable source or exposed through unsafe transports.
+- [ ] Marketplace, manifest, tool, skill, and policy documentation remain consistent.
 
-## Clean-room attestation
+## Clean-room and licensing
 
-- [ ] I did not copy, inspect for reimplementation, translate, vendor, or closely paraphrase another Apple Mail MCP implementation.
-- [ ] I wrote this contribution from public platform specifications, Mail.app's installed scripting dictionary, this repository's contracts, and my own original work.
-- [ ] I identified any third-party code or assets and verified compatible licensing.
+- [ ] I did not copy, translate, vendor, or closely paraphrase an implementation without compatible licensing and attribution.
+- [ ] I identified third-party code/assets and verified compatible licenses.
 
 ## Release note
 
-<!-- Add a concise changelog entry, or explain why none is needed. -->
+<!-- Add the relevant root/plugin changelog entry, or explain why none is needed. -->

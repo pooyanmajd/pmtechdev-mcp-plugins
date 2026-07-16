@@ -14,8 +14,6 @@
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node", "vitest/globals"],
-    "rootDir": "."
-  },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "tsup.config.ts", "eslint.config.js"]
+    "types": ["node", "vitest/globals"]
+  }
 }

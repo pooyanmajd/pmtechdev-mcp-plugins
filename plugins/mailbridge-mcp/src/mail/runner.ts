@@ -3,6 +3,7 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { buildMinimalChildEnvironment, stringifyBoundedJson } from "@pmtechdev/mcp-kit";
 import { MailBridgeError, isMailBridgeErrorCode } from "./errors.js";
 
 export const AUTOMATION_OPERATIONS = [
@@ -76,15 +77,6 @@ function defaultScriptPath(): string {
   return resolve(moduleDirectory, "runtime/mailbridge.jxa.js");
 }
 
-function childEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const childEnv: NodeJS.ProcessEnv = { PATH: "/usr/bin:/bin" };
-  for (const name of ["HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME"] as const) {
-    const value = env[name];
-    if (value !== undefined) childEnv[name] = value;
-  }
-  return childEnv;
-}
-
 function appendBounded(
   chunks: Buffer[],
   chunk: Buffer,
@@ -133,16 +125,17 @@ export class OsascriptAutomationRunner implements AutomationRunner {
       const runtimeRequest: AutomationRequest = attachmentDirectory
         ? { ...request, policy: { ...request.policy, attachmentDirectory } }
         : request;
-      const serialized = JSON.stringify(runtimeRequest);
-      if (Buffer.byteLength(serialized, "utf8") > MAX_REQUEST_BYTES) {
-        throw new MailBridgeError("INVALID_REQUEST", "The Mail automation request is too large.");
-      }
+      const serialized = stringifyBoundedJson(
+        runtimeRequest,
+        MAX_REQUEST_BYTES,
+        () => new MailBridgeError("INVALID_REQUEST", "The Mail automation request is too large."),
+      );
 
       return await new Promise<T>((resolvePromise, rejectPromise) => {
         const child = this.spawnProcess(
           "/usr/bin/osascript",
           ["-l", "JavaScript", this.scriptPath],
-          { stdio: ["pipe", "pipe", "pipe"], env: childEnvironment() },
+          { stdio: ["pipe", "pipe", "pipe"], env: buildMinimalChildEnvironment() },
         );
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];

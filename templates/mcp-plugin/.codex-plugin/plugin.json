@@ -1,0 +1,28 @@
+{
+  "name": "__PLUGIN_NAME__",
+  "version": "0.1.0",
+  "description": "A reusable PMTechDev MCP server and Codex plugin.",
+  "author": {
+    "name": "PMTechDev",
+    "email": "pooyanmjd@gmail.com",
+    "url": "https://github.com/pooyanmajd"
+  },
+  "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/__PLUGIN_NAME__#readme",
+  "repository": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins",
+  "license": "MIT",
+  "keywords": ["mcp", "codex", "pmtechdev"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "__PLUGIN_DISPLAY_NAME__",
+    "shortDescription": "A PMTechDev MCP integration.",
+    "longDescription": "A local-first MCP server and Codex plugin built on the shared PMTechDev MCP kit.",
+    "developerName": "PMTechDev",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/__PLUGIN_NAME__",
+    "privacyPolicyURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/TERMS.md",
+    "defaultPrompt": ["Check the __PLUGIN_DISPLAY_NAME__ connection."]
+  }
+}

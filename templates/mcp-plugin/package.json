@@ -1,0 +1,23 @@
+{
+  "name": "__PLUGIN_NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A PMTechDev MCP server and Codex plugin",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@pmtechdev/mcp-kit": "0.1.0",
+    "@types/node": "24.10.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10",
+    "zod": "4.4.3"
+  }
+}

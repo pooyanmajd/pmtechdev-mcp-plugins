@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "coverage/**", "node_modules/**"],
+    ignores: ["**/dist/**", "**/coverage/**", "node_modules/**", "templates/**"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked.map((configuration) => ({
@@ -25,7 +25,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["runtime/**/*.js"],
+    files: ["**/runtime/**/*.js"],
     languageOptions: {
       globals: {
         Application: "readonly",

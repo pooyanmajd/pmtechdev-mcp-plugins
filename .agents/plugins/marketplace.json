@@ -1,0 +1,20 @@
+{
+  "name": "pmtechdev",
+  "interface": {
+    "displayName": "PMTechDev MCP & Plugins"
+  },
+  "plugins": [
+    {
+      "name": "mailbridge-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mailbridge-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

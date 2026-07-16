@@ -95,4 +95,4 @@ List, search, and get operations declare `readOnlyHint=true`, `destructiveHint=f
 
 The production build commits a reproducible ESM executable at `dist/cli.js`; the fixed dispatcher is shipped at `runtime/mailbridge.jxa.js`. The Codex plugin's `.mcp.json` launches the executable with the plugin root as `cwd`, allowing it to resolve the dispatcher, and forces read-only mode by default. Plugin users do not need development dependencies or a source build. Plugin assets and its skill are presentation and agent-guidance layers; runtime policy remains enforced inside the server.
 
-The repository is a plugin payload, not a marketplace catalog. Marketplace publication and signed artifact provenance are separate release operations.
+This directory is an independently packageable plugin payload inside the PMTechDev repository marketplace. The root catalog controls discovery; signed artifact provenance remains a separate release operation.
