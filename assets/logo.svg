@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 112" role="img" aria-labelledby="title desc">
+  <title id="title">Mailbridge MCP</title>
+  <desc id="desc">Mailbridge wordmark with an abstract envelope and bridge</desc>
+  <rect x="8" y="8" width="96" height="96" rx="24" fill="#276B8C"/>
+  <path d="M28 34h56v42H28z" fill="none" stroke="#F4FBFF" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m30 37 26 21 26-21" fill="none" stroke="#F4FBFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 76v-3a14 14 0 0 1 28 0v3" fill="none" stroke="#A7E3E8" stroke-width="7" stroke-linecap="round"/>
+  <text x="124" y="61" fill="#16313D" font-family="ui-sans-serif, system-ui, sans-serif" font-size="39" font-weight="700" letter-spacing="-.8">Mailbridge</text>
+  <text x="126" y="86" fill="#276B8C" font-family="ui-monospace, SFMono-Regular, monospace" font-size="17" font-weight="600" letter-spacing="3">MCP</text>
+</svg>

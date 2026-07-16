@@ -1,0 +1,67 @@
+# Implementation contract
+
+## Product boundary
+
+Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
+
+The first public release is intentionally complete for safe inbox workflows, not for mailbox administration.
+
+## Tool surface
+
+Read tools:
+
+- `mail_list_accounts`
+- `mail_list_mailboxes`
+- `mail_search_messages`
+- `mail_get_message`
+- `mail_get_attachment`
+
+Write tools:
+
+- `mail_set_message_state` (read and flagged state only)
+- `mail_create_draft`
+- `mail_create_reply_draft`
+- `mail_create_forward_draft`
+
+Explicitly out of scope for v0.1.0: sending, permanent deletion, mailbox/rule CRUD, direct database access, arbitrary AppleScript execution, background monitoring, remote MCP hosting, and credential management.
+
+## Data and identity
+
+- Account IDs and mailbox IDs are opaque stable strings returned by the bridge; callers must not invent them.
+- Message IDs are opaque bridge IDs plus the RFC Message-ID when available.
+- Every message result includes its account and mailbox identity.
+- Search returns bounded message metadata plus `scannedCount` and `incomplete`. Full body access requires `mail_get_message`, and an incomplete search must be narrowed before absence is treated as conclusive.
+
+## Runtime architecture
+
+1. `src/cli.ts` parses configuration and starts the STDIO server.
+2. `src/server/` registers MCP tools, schemas, annotations, and output formatting.
+3. `src/mail/` defines the bridge interface and domain values.
+4. `src/mail/runner.ts` invokes the fixed `runtime/mailbridge.jxa.js` dispatcher through `/usr/bin/osascript -l JavaScript`.
+5. JXA receives one bounded UTF-8 JSON request through stdin; no input is embedded into executable source, process arguments, environment variables, or temporary request files.
+6. Tests inject a fake bridge and never require Mail.app.
+
+## Configuration
+
+- `MAILBRIDGE_MODE=read-only|drafts|full` (default `read-only`)
+- v0.1 exposes no send operation; sending remains a manual Mail.app action.
+- `MAILBRIDGE_ALLOWED_ACCOUNTS` optionally limits account email addresses (comma-separated)
+- `MAILBRIDGE_MAX_RESULTS` caps search results (hard maximum 100)
+- `MAILBRIDGE_MAX_BODY_CHARS` caps returned message text
+- `MAILBRIDGE_TIMEOUT_MS` caps every automation subprocess
+
+## MCP annotations
+
+- List/search/get tools: `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`.
+- State and draft tools: `readOnlyHint=false`, `destructiveHint=false`, `openWorldHint=false`.
+
+## Error model
+
+Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
+
+## Packaging
+
+- TypeScript source with strict type checking.
+- A bundled ESM executable in `dist/` so the plugin can run without installing runtime dependencies.
+- `.mcp.json` launches `node ./dist/cli.js` with plugin-root `cwd`.
+- Public artifacts include README, architecture, security policy, privacy policy, terms, contributing guide, changelog, license, and CI.

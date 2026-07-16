@@ -1,0 +1,11 @@
+src/
+tests/
+.github/
+.agents/
+.codex/
+AGENTS.md
+eslint.config.js
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+coverage/

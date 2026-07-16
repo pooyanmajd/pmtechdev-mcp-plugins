@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a focused improvement that preserves Mailbridge's safety boundary.
+title: "[Feature]: "
+labels: [enhancement, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem before proposing an API. Permanent deletion, arbitrary scripting, private Mail database access, remote hosting, credential management, hidden telemetry, and background monitoring are intentionally out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What safe workflow is difficult today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include bounded inputs, outputs, and error behavior without private email examples.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and privacy impact
+      description: Explain new data access, trust boundaries, mutations, external effects, and least-privilege controls.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checks
+      options:
+        - label: The proposal preserves local STDIO and read-only-by-default behavior.
+          required: true
+        - label: The proposal does not require copying or inspecting another Apple Mail MCP implementation.
+          required: true

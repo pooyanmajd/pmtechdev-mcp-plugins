@@ -1,0 +1,181 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type { MailbridgeConfig, MailbridgeMode } from "../../src/config.js";
+import { MailbridgeError } from "../../src/errors.js";
+import { MailbridgeToolService } from "../../src/server/index.js";
+import { createFakeBridge } from "./fake-bridge.js";
+
+function config(mode: MailbridgeMode = "read-only"): MailbridgeConfig {
+  return {
+    mode,
+    allowedAccounts: undefined,
+    maxResults: 10,
+    maxBodyChars: 1_000,
+    timeoutMs: 5_000,
+  };
+}
+
+function parsedResult(result: Awaited<ReturnType<MailbridgeToolService["invoke"]>>): Record<string, unknown> {
+  const text = result.content[0];
+  if (text?.type !== "text") {
+    throw new Error("Expected a JSON text result.");
+  }
+  return JSON.parse(text.text) as Record<string, unknown>;
+}
+
+describe("MailbridgeToolService", () => {
+  it("returns structured JSON text and invokes read tools", async () => {
+    const { bridge, spies } = createFakeBridge();
+    spies.listAccounts.mockResolvedValue([{ id: "account:1", email: "person@example.com" }]);
+    const service = new MailbridgeToolService(bridge, config());
+
+    const result = await service.invoke("mail_list_accounts", {});
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      ok: true,
+      data: [{ id: "account:1", email: "person@example.com" }],
+    });
+    expect(parsedResult(result)).toEqual(result.structuredContent);
+    expect(spies.listAccounts).toHaveBeenCalledOnce();
+  });
+
+  it("caps search limits and message bodies with server configuration", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const service = new MailbridgeToolService(bridge, config());
+
+    await service.invoke("mail_search_messages", { limit: 100 });
+    await service.invoke("mail_get_message", { messageId: "message:1", maxBodyChars: 50_000 });
+    await service.invoke("mail_get_attachment", { attachmentId: "attachment:1", maxBytes: 1024 });
+
+    expect(spies.searchMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 10, unread: false, flagged: false }),
+    );
+    expect(spies.getMessage).toHaveBeenCalledWith({ messageId: "message:1", maxBodyChars: 1_000 });
+    expect(spies.getAttachment).toHaveBeenCalledWith({ attachmentId: "attachment:1", maxBytes: 1_024 });
+  });
+
+  it("passes bounded mailbox options", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const service = new MailbridgeToolService(bridge, config());
+
+    await service.invoke("mail_list_mailboxes", { accountId: "account:1", includeNested: false });
+
+    expect(spies.listMailboxes).toHaveBeenCalledWith({ accountId: "account:1", includeNested: false });
+  });
+
+  it.each([
+    ["mail_set_message_state", { messageId: "message:1", read: true }],
+    ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"] }],
+    ["mail_create_reply_draft", { messageId: "message:1", from: "me@example.com" }],
+    ["mail_create_forward_draft", { messageId: "message:1", from: "me@example.com", to: ["person@example.com"] }],
+  ] as const)("blocks %s in read-only mode", async (tool, input) => {
+    const { bridge } = createFakeBridge();
+    const result = await new MailbridgeToolService(bridge, config()).invoke(tool, input);
+
+    expect(result.isError).toBe(true);
+    expect(parsedResult(result)).toMatchObject({ ok: false, error: { code: "READ_ONLY" } });
+  });
+
+  it("allows draft creation in drafts mode but still blocks message state changes", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const service = new MailbridgeToolService(bridge, config("drafts"));
+
+    const draft = await service.invoke("mail_create_draft", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      subject: "Hello",
+      body: "World",
+    });
+    const state = await service.invoke("mail_set_message_state", { messageId: "message:1", flagged: true });
+
+    expect(draft.isError).not.toBe(true);
+    expect(spies.createDraft).toHaveBeenCalledOnce();
+    expect(parsedResult(state)).toMatchObject({ ok: false, error: { code: "READ_ONLY" } });
+    expect(spies.setMessageState).not.toHaveBeenCalled();
+  });
+
+  it("allows bounded state changes in full mode", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const result = await new MailbridgeToolService(bridge, config("full")).invoke(
+      "mail_set_message_state",
+      { messageId: "message:1", read: true, flagged: false },
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(spies.setMessageState).toHaveBeenCalledWith({
+      messageId: "message:1",
+      read: true,
+      flagged: false,
+    });
+  });
+
+  it("serializes modifying operations and marks mutation timeouts as outcome unknown", async () => {
+    const serialized = createFakeBridge();
+    let releaseFirst = (): void => undefined;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    serialized.spies.setMessageState
+      .mockReturnValueOnce(firstPending.then(() => ({})))
+      .mockResolvedValueOnce({});
+    const service = new MailbridgeToolService(serialized.bridge, config("full"));
+    const first = service.invoke("mail_set_message_state", { messageId: "message:1", read: true });
+    const second = service.invoke("mail_set_message_state", { messageId: "message:2", read: true });
+    await vi.waitFor(() => {
+      expect(serialized.spies.setMessageState).toHaveBeenCalledTimes(1);
+    });
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(serialized.spies.setMessageState).toHaveBeenCalledTimes(2);
+
+    const timedOut = createFakeBridge();
+    timedOut.spies.createDraft.mockRejectedValue({ code: "TIMEOUT" });
+    const result = await new MailbridgeToolService(timedOut.bridge, config("drafts")).invoke(
+      "mail_create_draft",
+      { accountId: "account:1", from: "me@example.com", to: ["person@example.com"] },
+    );
+    expect(parsedResult(result)).toMatchObject({
+      ok: false,
+      error: { code: "MUTATION_OUTCOME_UNKNOWN" },
+    });
+  });
+
+  it.each([
+    ["mail_search_messages", { limit: 101 }],
+    ["mail_get_message", { messageId: "" }],
+    ["mail_get_attachment", { attachmentId: "id", maxBytes: 6 * 1024 * 1024 }],
+    ["mail_set_message_state", { messageId: "id" }],
+    ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["not-an-email"] }],
+    ["mail_create_forward_draft", { messageId: "id", from: "me@example.com" }],
+  ] as const)("rejects invalid bounded input for %s", async (tool, input) => {
+    const { bridge } = createFakeBridge();
+    const result = await new MailbridgeToolService(bridge, config("full")).invoke(tool, input);
+
+    expect(parsedResult(result)).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+  });
+
+  it("sanitizes unknown bridge failures and preserves only recognized error codes", async () => {
+    const unknown = createFakeBridge();
+    const known = createFakeBridge();
+    unknown.spies.listAccounts.mockRejectedValue(new Error("secret script and filesystem details"));
+    known.spies.listAccounts.mockRejectedValue(
+      new MailbridgeError("AUTOMATION_DENIED", "This internal detail must not survive structural mapping"),
+    );
+
+    const unknownResult = await new MailbridgeToolService(unknown.bridge, config()).invoke("mail_list_accounts", {});
+    const knownResult = await new MailbridgeToolService(known.bridge, config()).invoke("mail_list_accounts", {});
+
+    expect(JSON.stringify(parsedResult(unknownResult))).not.toContain("secret");
+    expect(parsedResult(unknownResult)).toMatchObject({
+      error: { code: "MAIL_AUTOMATION_ERROR", message: "Apple Mail could not complete the requested operation." },
+    });
+    expect(parsedResult(knownResult)).toMatchObject({
+      error: {
+        code: "AUTOMATION_DENIED",
+        message: "Apple Mail automation access was denied. Review macOS Automation permissions.",
+      },
+    });
+  });
+});

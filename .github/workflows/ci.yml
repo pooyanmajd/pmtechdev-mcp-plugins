@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Node 20 / macOS
+    runs-on: macos-14
+    timeout-minutes: 15
+    env:
+      MAILBRIDGE_MODE: read-only
+      CI: "true"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run checks
+        run: npm run check
+
+      - name: Validate fixed JXA dispatcher
+        run: node --check runtime/mailbridge.jxa.js && osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" runtime/mailbridge.jxa.js
+
+      - name: Validate plugin package metadata
+        run: npm run validate:package
+
+      - name: Build distributable
+        run: npm run build
+
+      - name: Verify runtime payload exists
+        run: test -f dist/cli.js && test -f runtime/mailbridge.jxa.js
+
+      - name: Verify committed bundle is current
+        run: git diff --exit-code -- dist
+
+      - name: Inspect package contents
+        run: npm run pack:dry-run
+
+      - name: Confirm CI is read-only and the bundle has no send surface
+        run: test "$MAILBRIDGE_MODE" = "read-only" && ! grep -qE 'mail_send_draft|Mail\\.send|sendDraft' runtime/mailbridge.jxa.js dist/cli.js
+
+# CI deliberately does not launch Mail.app, invoke osascript, request Automation
+# permission, enable live integration tests, or operate a real mailbox.

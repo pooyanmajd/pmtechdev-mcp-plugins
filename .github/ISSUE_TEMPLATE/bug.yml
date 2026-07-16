@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible Mailbridge defect using synthetic or redacted data.
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Never paste real email bodies, credentials, tokens, account IDs, private addresses, or vulnerable details here. Report security issues privately using SECURITY.md.
+
+  - type: input
+    id: version
+    attributes:
+      label: Mailbridge version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Provide macOS, Node.js, and MCP client versions.
+      placeholder: macOS 15.x; Node 20.x; Codex version …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - read-only
+        - drafts
+        - full
+        - unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data and exact safe steps. Do not reproduce against someone else's mailbox.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized error code
+      description: Remove message content, addresses, IDs, paths, environment values, and stack traces.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed personal information, email content, credentials, tokens, opaque IDs, and secrets.
+          required: true
+        - label: This report does not disclose a security vulnerability.
+          required: true
+        - label: No email was sent, moved, deleted, or otherwise mutated while reproducing this issue.
+          required: true

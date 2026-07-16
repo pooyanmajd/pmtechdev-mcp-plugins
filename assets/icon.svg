@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Mailbridge icon</title>
+  <desc id="desc">An abstract envelope joined by a bridge arch</desc>
+  <rect width="64" height="64" rx="15" fill="#276B8C"/>
+  <path d="M13 20h38v26H13z" fill="none" stroke="#F4FBFF" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m14.5 22 17.5 14L49.5 22" fill="none" stroke="#F4FBFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 46v-3a10 10 0 0 1 20 0v3" fill="none" stroke="#A7E3E8" stroke-width="4" stroke-linecap="round"/>
+</svg>
