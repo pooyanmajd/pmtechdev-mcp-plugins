@@ -4,6 +4,8 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+- Hardened public contribution and repository governance with protected-branch guidance, code ownership, pinned GitHub Actions, CodeQL, dependency review, and private vulnerability reporting.
+
 ## [0.1.0] - 2026-07-16
 
 - Established the PMTechDev multi-plugin monorepo and Codex marketplace.

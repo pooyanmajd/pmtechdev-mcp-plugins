@@ -1,5 +1,9 @@
 # PMTechDev MCP & Plugins
 
+[![CI](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/codeql.yml/badge.svg)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 PMTechDev MCP & Plugins is an expandable monorepo, reusable development kit, and Codex marketplace for local-first Model Context Protocol servers and plugins maintained by PMTechDev.
 
 The repository keeps each integration independently buildable under `plugins/`, while shared safety primitives live under `packages/`. New integrations start from a tested scaffold instead of rebuilding packaging, policy, CI, and MCP boilerplate from scratch.
@@ -81,6 +85,6 @@ Add only broadly reusable, well-tested infrastructure to the kit. Integration-sp
 - Mutations require explicit tools, clear annotations, deterministic tests, and safe retry semantics.
 - Each plugin remains independently packageable and owns its runtime-specific documentation.
 
-See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), [Privacy](PRIVACY.md), and [Terms](TERMS.md). The workspace and bundled plugins are available under the [MIT License](LICENSE).
+See [Contributing](CONTRIBUTING.md), [Support](SUPPORT.md), [Security](SECURITY.md), [Privacy](PRIVACY.md), and [Terms](TERMS.md). The workspace and bundled plugins are available under the [MIT License](LICENSE).
 
 Copyright © 2026 PMTechDev / Pooyan Majd.
