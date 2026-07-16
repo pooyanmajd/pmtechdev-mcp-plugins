@@ -18,6 +18,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "esbuild": "0.28.1"
+  },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",
