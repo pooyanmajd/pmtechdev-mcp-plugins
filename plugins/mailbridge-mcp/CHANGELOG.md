@@ -4,10 +4,6 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
-### Changed
-
-- Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
-
 ## [0.1.0] - 2026-07-16
 
 ### Added
@@ -20,6 +16,10 @@ All notable changes to this project will be documented here. The format is based
 - Fixed JXA dispatcher invocation using bounded stdin data rather than source interpolation or process arguments.
 - Codex plugin manifest, local MCP configuration, and safe-use Mailbridge skill.
 - Deterministic fake-bridge tests, macOS CI, public security/privacy policies, and original brand assets.
+
+### Changed
+
+- Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
 [Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0

@@ -18,7 +18,7 @@
     "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, and draft-only composition workflows.",
     "developerName": "PMTechDev",
     "category": "Productivity",
-    "capabilities": ["Search", "Read", "Draft", "Write"],
+    "capabilities": ["Search", "Read", "Draft"],
     "websiteURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp",
     "privacyPolicyURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/TERMS.md",

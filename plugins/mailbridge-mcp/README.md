@@ -94,14 +94,28 @@ Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before install
 
 This plugin directory contains a complete payload: `.codex-plugin/plugin.json`, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in read-only mode.
 
-The repository root is the PMTechDev marketplace. After it is published, add it and install Mailbridge:
+> [!CAUTION]
+> Install Mailbridge only in a trusted Codex or MCP host. The host process receives macOS Automation authority for Mail, so a compromised host can exceed Mailbridge's own tool policy. Selected mail content and tool results may also be sent to the model provider configured in the host. For sensitive mail, prefer a suitably governed or local model, keep `read-only` mode, and configure `MAILBRIDGE_ALLOWED_ACCOUNTS` through a reviewed custom MCP registration.
+
+The repository root is the published PMTechDev marketplace. Install the current marketplace snapshot with:
 
 ```bash
 codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For local development before publication, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
+For an immutable installation reviewed as Mailbridge `0.1.0`, pin the marketplace to its release tag:
+
+```bash
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.1.0
+codex plugin add mailbridge-mcp@pmtechdev
+```
+
+Choose one marketplace source for a fresh installation. If `pmtechdev` is already configured from `main`, run `codex plugin marketplace remove pmtechdev` before re-adding the pinned source. Start a new Codex task after installation so the bundled skill and MCP tools load.
+
+The bundled marketplace registration intentionally exposes all accounts configured in Mail.app because no account addresses are known at install time. Users who need account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
+
+For local development, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
 
 ```bash
 python3 /path/to/plugin-creator/scripts/validate_plugin.py .
@@ -136,11 +150,13 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 
 ### Mode capabilities
 
-| Mode | Search/read | Read/flag state | Create drafts |
-| --- | --- | --- | --- |
-| `read-only` | Yes | No | No |
-| `drafts` | Yes | No | Yes |
-| `full` | Yes | Yes | Yes |
+| Mode | List/search/read/attachments | Change read/flag state | Create drafts | Send, delete, or move mail |
+| --- | --- | --- | --- | --- |
+| `read-only` (marketplace default) | Yes | No | No | Never |
+| `drafts` | Yes | No | Yes | Never |
+| `full` | Yes | Yes | Yes | Never |
+
+`full` means all operations that Mailbridge supports; it does not mean unrestricted Mail.app access. No mode registers sending, deletion, moving, mailbox administration, rule changes, credential access, or arbitrary automation.
 
 ## MCP tools
 
@@ -223,8 +239,8 @@ Errors are intentionally sanitized; tool results do not expose raw scripts, cred
 
 - Harden v0.1.x through deterministic conformance, security, and compatibility testing.
 - Document verified macOS and Mail.app version coverage.
-- Evaluate signed release artifacts and reproducible provenance.
-- Publish and maintain Mailbridge through the PMTechDev repository marketplace.
+- Maintain tagged release artifacts with checksums, an SBOM, and signed GitHub provenance attestations.
+- Maintain Mailbridge through the published PMTechDev repository marketplace.
 
 Remote MCP hosting, arbitrary automation, private Mail database access, permanent deletion, and bulk mutation are not roadmap goals.
 

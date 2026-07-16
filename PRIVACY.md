@@ -16,6 +16,8 @@ Plugins communicate with their MCP client and the systems named in their documen
 
 Your MCP client or model provider may separately receive tool inputs and results according to that product's settings and privacy terms. Before using a cloud-hosted model, decide whether selected connected data may be sent to that provider.
 
+For high-sensitivity mail, prefer a model and host whose data handling you have reviewed, use a local model when that is the appropriate control, keep Mailbridge read-only, configure a narrow account allowlist, and retrieve message bodies or attachments only when necessary. Local STDIO prevents Mailbridge from adding a hosted relay; it does not make the surrounding MCP client or model local.
+
 ## Storage and retention
 
 Plugins must document storage they create. Mailbridge maintains no message database, credentials store, analytics history, or background index. Connected applications, MCP clients, terminals, system logs, model-provider history, and crash tooling may retain data independently.
