@@ -22,7 +22,9 @@ Repository administration must keep release immutability enabled and an active `
 
 Merge the versioned release PR through protected `main`. When the version has no existing release tag, the `Release Mailbridge` workflow repeats every release check, creates an immutable annotated `vX.Y.Z` tag for that exact merge commit, and publishes the release. Ordinary main-branch changes whose version is already released exit without creating or changing anything.
 
-For an owner-only retry or manual release, open **Actions → Release Mailbridge → Run workflow**. The workflow checks `github.actor == github.repository_owner` before reading or publishing the release. It never updates version files or bypasses protected main; the reviewed version bump must already be merged.
+For an owner-only retry before the release tag exists, open **Actions → Release Mailbridge → Run workflow** from the default branch. The workflow rejects dispatches from other refs and checks the triggering actor against the repository owner before reading or publishing the release. It never updates version files or bypasses protected main; the reviewed version bump must already be merged.
+
+If a run creates the immutable tag but fails before publishing its release, open that exact failed run and choose **Re-run all jobs**. Reruns are owner-gated and check out the original event commit, so this remains safe and recoverable even if `main` has advanced since the failure.
 
 Both automatic and owner-dispatched releases produce GitHub-signed artifact provenance and SBOM attestations. The repository tag ruleset prevents release-tag updates and deletion.
 
