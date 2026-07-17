@@ -52,8 +52,8 @@ if (
 ) {
   fail("Claude plugin MCP registration does not launch the committed bundle");
 }
-if (claudeRegistration?.env?.MAILBRIDGE_MODE !== "read-only") {
-  fail("Claude plugin MCP registration is not read-only by default");
+if (claudeRegistration?.env?.MAILBRIDGE_MODE !== "prompted") {
+  fail("Claude plugin MCP registration is not configured for per-send prompting");
 }
 
 const runtime = readFileSync(resolve(root, "runtime/mailbridge.jxa.js"), "utf8");

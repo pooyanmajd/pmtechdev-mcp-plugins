@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
+Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex and Claude Code plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
 
 The public surface is intentionally bounded to safe inbox workflows and explicit, attachment-free single-message sending—not mailbox administration.
 

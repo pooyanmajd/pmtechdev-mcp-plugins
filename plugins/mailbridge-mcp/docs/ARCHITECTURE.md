@@ -8,7 +8,7 @@ Mailbridge MCP is a macOS-only, local STDIO server. It exposes a fixed, bounded 
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ MCP client / Codex                                           │
+│ MCP client / Codex / Claude Code                             │
 │ User intent, tool approval, untrusted model context          │
 └──────────────────────────────┬───────────────────────────────┘
                                │ STDIO: MCP JSON-RPC
@@ -67,7 +67,7 @@ Mail.app owns provider authentication, network traffic, account configuration, a
 
 ### Mutation boundary
 
-Read-only mode blocks all mutations. Draft mode permits draft creation but not message-state changes. Full mode additionally permits read/flag state changes and deliberately retains its non-send semantics. Prompted mode permits those operations plus the two reviewed send tools, but each send fails closed unless the MCP client presents and accepts an exact-content form elicitation. Direct send mode requires at least one allowlisted sender address. Modifying operations are serialized and bounded by a queue; an uncertain send outcome is reported as `MUTATION_OUTCOME_UNKNOWN` so callers inspect Mail.app instead of blindly retrying.
+Read-only mode blocks all mutations. Draft mode permits draft creation but not message-state changes. Full mode additionally permits read/flag state changes and deliberately retains its non-send semantics. Prompted mode permits those operations plus the two reviewed send tools, but each send fails closed unless the MCP client presents and accepts an exact-content form elicitation. The form JSON-encodes untrusted header values and each body line so email content cannot forge its trusted review structure. Direct send mode requires at least one allowlisted sender address. Modifying operations are serialized and bounded by a queue; an uncertain send outcome is reported as `MUTATION_OUTCOME_UNKNOWN` so callers inspect Mail.app instead of blindly retrying.
 
 Mail's public outgoing-message interface cannot provide a complete, stable attachment inventory for every draft, so Mailbridge never sends an arbitrary edited draft or forward. `mail_send_message` and `mail_send_reply` instead construct one attachment-free outgoing object from bounded, validated input and submit it within the same JXA operation. The constructed subject/body are read back before submission and changed content fails closed. Reply content is replaced with exactly the approved body, and Mail's resolved recipient sets must match the approved expected recipients immediately before submission. Each call requires a substantive body and literal `confirmed: true`, plus either an accepted exact-content client elicitation in prompted mode or an explicit sender allowlist in direct send mode. Tool guidance requires the exact sender, recipients, subject, and body to be shown and approved before that flag is set. The runtime cannot enforce human comprehension outside prompted mode, so the trusted-host boundary remains material.
 
@@ -98,6 +98,6 @@ List, search, and get operations declare `readOnlyHint=true`, `destructiveHint=f
 
 ## Distribution
 
-The production build commits a reproducible ESM executable at `dist/cli.js`; the fixed dispatcher is shipped at `runtime/mailbridge.jxa.js`. The Codex plugin's `.mcp.json` launches the executable with the plugin root as `cwd`, allowing it to resolve the dispatcher, and selects prompted mode so drafts work immediately while sends require client confirmation. Plugin users do not need development dependencies or a source build. Plugin assets and its skill are presentation and agent-guidance layers; runtime policy remains enforced inside the server.
+The production build commits a reproducible ESM executable at `dist/cli.js`; the fixed dispatcher is shipped at `runtime/mailbridge.jxa.js`. The Codex plugin's `.mcp.json` launches the executable with the plugin root as `cwd`, while the Claude Code manifest resolves it through `CLAUDE_PLUGIN_ROOT`. Both select prompted mode so drafts work immediately while sends require client confirmation. Plugin users do not need development dependencies or a source build. Plugin assets and its skill are presentation and agent-guidance layers; runtime policy remains enforced inside the server.
 
 This directory is an independently packageable plugin payload inside the PMTechDev repository marketplace. The root catalog controls discovery; signed artifact provenance remains a separate release operation.

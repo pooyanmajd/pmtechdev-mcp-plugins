@@ -135,6 +135,16 @@ const substantiveBody = z
   .max(MAX_OUTGOING_BODY_CHARS)
   .refine((body) => body.trim().length > 0, { message: "A non-empty message body is required." });
 
+const sendSubject = z
+  .string()
+  .max(MAX_SUBJECT_CHARS)
+  .refine(
+    (subject) => !/[\p{Cc}\p{Zl}\p{Zp}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(subject),
+    {
+      message: "The subject cannot contain control, line-separator, or bidirectional formatting characters.",
+    },
+  );
+
 export const sendMessageInputSchema = z
   .object({
     accountId: opaqueId.describe("Opaque account ID returned by mail_list_accounts."),
@@ -142,7 +152,7 @@ export const sendMessageInputSchema = z
     to: recipients.default([]),
     cc: recipients.default([]),
     bcc: recipients.default([]),
-    subject: z.string().max(MAX_SUBJECT_CHARS).default(""),
+    subject: sendSubject.default(""),
     body: substantiveBody,
     confirmed: confirmedSend,
   })

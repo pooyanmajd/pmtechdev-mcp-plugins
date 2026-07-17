@@ -7,7 +7,7 @@ Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelco
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
 > [!IMPORTANT]
-> The direct-server default is read-only. The bundled Codex marketplace plugin uses `prompted` mode so drafts work immediately and every send requires a fresh client-side confirmation showing the exact outbound content. The bundled Claude Code plugin remains read-only. Allowlisted `send` mode remains available for reviewed direct registrations.
+> The direct-server default is read-only. The bundled Codex and Claude Code marketplace plugins use `prompted` mode so drafts work immediately and every send requires a fresh client-side confirmation showing the exact outbound content. Allowlisted `send` mode remains available for reviewed direct registrations.
 
 ## Why Mailbridge
 
@@ -43,7 +43,7 @@ See [Architecture](docs/ARCHITECTURE.md) for data flow and trust boundaries, and
 - **Local transport:** the server exposes STDIO only and has no application telemetry.
 - **Least privilege:** it uses Mail.app's public automation interface and does not read Mail's private database or request Full Disk Access.
 - **Safe direct default:** `MAILBRIDGE_MODE` defaults to `read-only` when no mode is configured.
-- **Prompted Codex marketplace sends:** the bundled Codex plugin runs in `prompted` mode. Drafts and reversible state changes are enabled, while each send fails closed unless the MCP client supports form elicitation and the user accepts a prompt containing the exact sender, recipients, subject context, and body. The bundled Claude Code plugin remains read-only.
+- **Prompted marketplace sends:** the bundled Codex and Claude Code plugins run in `prompted` mode. Drafts and reversible state changes are enabled, while each send fails closed unless the MCP client supports form elicitation and the user accepts a prompt containing an unambiguous representation of the exact sender, recipients, subject context, and body.
 - **Allowlisted direct sends:** existing `read-only`, `drafts`, and `full` configurations cannot send. `MAILBRIDGE_MODE=send` authorizes direct sending only with a non-empty `MAILBRIDGE_ALLOWED_ACCOUNTS` value.
 - **Atomic, attachment-free sending:** `mail_send_message` and `mail_send_reply` construct and submit one reviewed message in a single operation. Mailbridge does not send arbitrary edited drafts, forwards, attachments, or batches because Mail's public outgoing-message API cannot reliably inventory every draft attachment.
 - **No arbitrary automation:** callers choose only from fixed, validated tools; arbitrary AppleScript/JXA execution is out of scope.
@@ -108,23 +108,23 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.2.2`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.3.0`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.3.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
 Choose one marketplace source for a fresh installation. If `pmtechdev` is already configured from `main`, run `codex plugin marketplace remove pmtechdev` before re-adding the pinned source. Start a new Codex task after installation so the bundled skill and MCP tools load.
 
-The bundled Codex marketplace registration intentionally exposes all accounts configured in Mail.app because no account addresses are known at install time. Every Codex marketplace send therefore requires an exact-content client confirmation that includes the selected sender. Users who need static account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
+The bundled marketplace registrations intentionally expose all accounts configured in Mail.app because no account addresses are known at install time. Every marketplace send therefore requires an exact-content client confirmation that includes the selected sender. Users who need static account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
 
 ## Install as a Claude Code plugin
 
-The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and keeps `MAILBRIDGE_MODE=read-only` by default. Install the immutable release with:
+The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh exact-content form elicitation. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.2.2
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.3.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
@@ -171,10 +171,10 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `read-only` (direct default) | Yes | No | No | No |
 | `drafts` | Yes | No | Yes | No |
 | `full` | Yes | Yes | Yes | No |
-| `prompted` (Codex marketplace default) | Yes | Yes | Yes | Yes, after exact-content MCP elicitation |
+| `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after exact-content MCP elicitation |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. The form JSON-encodes untrusted header values and each body line so mail content cannot forge its trusted labels or delimiters. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 

@@ -270,6 +270,24 @@ describe("MailbridgeToolService", () => {
       error: { code: "SEND_NOT_CONFIRMED" },
     });
     expect(declined.spies.sendMessage).not.toHaveBeenCalled();
+
+    const failed = createFakeBridge();
+    const failedResult = await new MailbridgeToolService(
+      failed.bridge,
+      config("prompted"),
+      vi.fn().mockRejectedValue(new Error("client disconnected")),
+    ).invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      body: "Approved body",
+      confirmed: true,
+    });
+    expect(parsedResult(failedResult)).toMatchObject({
+      ok: false,
+      error: { code: "CONFIRMATION_UNAVAILABLE" },
+    });
+    expect(failed.spies.sendMessage).not.toHaveBeenCalled();
   });
 
   it("serializes modifying operations and marks mutation timeouts as outcome unknown", async () => {
@@ -356,6 +374,7 @@ describe("MailbridgeToolService", () => {
     ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["not-an-email"] }],
     ["mail_create_forward_draft", { messageId: "id", from: "me@example.com" }],
     ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], body: "Hello", confirmed: false }],
+    ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], subject: "Spoof\nTo: attacker@example.com", body: "Hello", confirmed: true }],
     ["mail_send_reply", { messageId: "id", from: "me@example.com", expectedTo: ["person@example.com"], body: "   ", confirmed: true }],
   ] as const)("rejects invalid bounded input for %s", async (tool, input) => {
     const { bridge } = createFakeBridge();

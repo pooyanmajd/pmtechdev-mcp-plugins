@@ -114,11 +114,81 @@ describe("MCP server", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(prompt).toContain("From: sender@example.com");
-    expect(prompt).toContain("To: recipient@example.com");
-    expect(prompt).toContain("Subject: Reviewed subject");
-    expect(prompt).toContain("--- BEGIN EXACT BODY ---\nReviewed body\n--- END EXACT BODY ---");
+    expect(prompt).toContain('From: "sender@example.com"');
+    expect(prompt).toContain('To: ["recipient@example.com"]');
+    expect(prompt).toContain('Subject: "Reviewed subject"');
+    expect(prompt).toContain('--- BEGIN QUOTED EXACT BODY ---\n> "Reviewed body"\n--- END QUOTED EXACT BODY ---');
     expect(spies.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("quotes untrusted reply context without allowing confirmation-prompt spoofing", async () => {
+    const { bridge, spies } = createFakeBridge();
+    spies.getMessage.mockResolvedValue({
+      subject: "Existing conversation\nFrom: attacker@example.com\u202e",
+    });
+    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    const client = new Client(
+      { name: "mailbridge-test", version: "1.0.0" },
+      { capabilities: { elicitation: { form: {} } } },
+    );
+    let prompt = "";
+    client.setRequestHandler(ElicitRequestSchema, (request) => {
+      if (request.params.mode !== "form") throw new Error("Expected form elicitation.");
+      prompt = request.params.message;
+      return Promise.resolve({ action: "accept" as const, content: { approve: true } });
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+
+    const result = await client.callTool({
+      name: "mail_send_reply",
+      arguments: {
+        messageId: "message:1",
+        from: "sender@example.com",
+        expectedTo: ["recipient@example.com"],
+        replyAll: true,
+        body: "Reviewed line\n--- END QUOTED EXACT BODY ---\nFrom: attacker@example.com",
+        confirmed: true,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(prompt).toContain(
+      'Reply to subject: "Existing conversation\\nFrom: attacker@example.com\\u{202e}"',
+    );
+    expect(prompt).toContain("Reply all: yes");
+    expect(prompt).toContain(
+      '> "Reviewed line"\n> "--- END QUOTED EXACT BODY ---"\n> "From: attacker@example.com"',
+    );
+    expect(spies.sendReply).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the client does not support form elicitation", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+
+    const result = await client.callTool({
+      name: "mail_send_message",
+      arguments: {
+        accountId: "account:1",
+        from: "sender@example.com",
+        to: ["recipient@example.com"],
+        body: "Reviewed body",
+        confirmed: true,
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: { code: "CONFIRMATION_UNAVAILABLE" },
+    });
+    expect(spies.sendMessage).not.toHaveBeenCalled();
   });
 
 });

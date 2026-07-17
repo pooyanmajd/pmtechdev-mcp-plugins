@@ -106,7 +106,7 @@ export class MailbridgeToolService {
     }
   }
 
-  private requireFullMode(): void {
+  private requireStateChangeMode(): void {
     if (this.config.mode !== "full" && this.config.mode !== "prompted" && this.config.mode !== "send") {
       throw new MailbridgeError("READ_ONLY");
     }
@@ -202,7 +202,7 @@ export class MailbridgeToolService {
         return this.bridge.getAttachment(input);
       }
       case "mail_set_message_state": {
-        this.requireFullMode();
+        this.requireStateChangeMode();
         const input = parseInput(setMessageStateInputSchema, rawInput);
         return this.runMutation(async () =>
           this.bridge.setMessageState({
@@ -228,8 +228,9 @@ export class MailbridgeToolService {
         return this.runMutation(async () => this.bridge.createForwardDraft(input));
       }
       case "mail_send_message": {
+        const authorization = this.sendAuthorization();
         const input = parseInput(sendMessageInputSchema, rawInput);
-        if (this.sendAuthorization() === "prompted") {
+        if (authorization === "prompted") {
           await this.confirmPromptedSend({
             kind: "message",
             from: input.from,
@@ -243,8 +244,9 @@ export class MailbridgeToolService {
         return this.runMutation(async () => this.bridge.sendMessage(input));
       }
       case "mail_send_reply": {
+        const authorization = this.sendAuthorization();
         const input = parseInput(sendReplyInputSchema, rawInput);
-        if (this.sendAuthorization() === "prompted") {
+        if (authorization === "prompted") {
           const source = await this.bridge.getMessage({
             messageId: input.messageId,
             maxBodyChars: 1,

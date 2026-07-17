@@ -88,8 +88,8 @@ for (const directory of pluginDirectories) {
   ) {
     fail(`${prefix} does not launch its committed bundle from Claude Code`);
   }
-  if (directory === "mailbridge-mcp" && claudeRegistration.env?.MAILBRIDGE_MODE !== "read-only") {
-    fail(`${prefix} Claude registration is not read-only by default`);
+  if (directory === "mailbridge-mcp" && claudeRegistration.env?.MAILBRIDGE_MODE !== "prompted") {
+    fail(`${prefix} Claude registration is not configured for per-send prompting`);
   }
   for (const path of [
     `${prefix}/dist/cli.js`,

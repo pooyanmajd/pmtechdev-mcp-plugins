@@ -32089,13 +32089,19 @@ var confirmedSend = external_exports.literal(true).describe(
   "Must be true only after the user has explicitly approved the exact recipients, subject, and body."
 );
 var substantiveBody = external_exports.string().max(MAX_OUTGOING_BODY_CHARS).refine((body) => body.trim().length > 0, { message: "A non-empty message body is required." });
+var sendSubject = external_exports.string().max(MAX_SUBJECT_CHARS).refine(
+  (subject) => !/[\p{Cc}\p{Zl}\p{Zp}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(subject),
+  {
+    message: "The subject cannot contain control, line-separator, or bidirectional formatting characters."
+  }
+);
 var sendMessageInputSchema = external_exports.object({
   accountId: opaqueId.describe("Opaque account ID returned by mail_list_accounts."),
   from: emailAddress.describe("Sender address belonging to the selected and allowed account."),
   to: recipients.default([]),
   cc: recipients.default([]),
   bcc: recipients.default([]),
-  subject: external_exports.string().max(MAX_SUBJECT_CHARS).default(""),
+  subject: sendSubject.default(""),
   body: substantiveBody,
   confirmed: confirmedSend
 }).strict().refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
@@ -32188,7 +32194,7 @@ var MailbridgeToolService = class {
       throw new MailbridgeError("READ_ONLY");
     }
   }
-  requireFullMode() {
+  requireStateChangeMode() {
     if (this.config.mode !== "full" && this.config.mode !== "prompted" && this.config.mode !== "send") {
       throw new MailbridgeError("READ_ONLY");
     }
@@ -32274,7 +32280,7 @@ var MailbridgeToolService = class {
         return this.bridge.getAttachment(input);
       }
       case "mail_set_message_state": {
-        this.requireFullMode();
+        this.requireStateChangeMode();
         const input = parseInput(setMessageStateInputSchema, rawInput);
         return this.runMutation(
           async () => this.bridge.setMessageState({
@@ -32300,8 +32306,9 @@ var MailbridgeToolService = class {
         return this.runMutation(async () => this.bridge.createForwardDraft(input));
       }
       case "mail_send_message": {
+        const authorization = this.sendAuthorization();
         const input = parseInput(sendMessageInputSchema, rawInput);
-        if (this.sendAuthorization() === "prompted") {
+        if (authorization === "prompted") {
           await this.confirmPromptedSend({
             kind: "message",
             from: input.from,
@@ -32315,8 +32322,9 @@ var MailbridgeToolService = class {
         return this.runMutation(async () => this.bridge.sendMessage(input));
       }
       case "mail_send_reply": {
+        const authorization = this.sendAuthorization();
         const input = parseInput(sendReplyInputSchema, rawInput);
-        if (this.sendAuthorization() === "prompted") {
+        if (authorization === "prompted") {
           const source = await this.bridge.getMessage({
             messageId: input.messageId,
             maxBodyChars: 1
@@ -32453,28 +32461,43 @@ var TOOL_DEFINITIONS = [
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.2.2"
+  version: "0.3.0"
 });
+function displayJson(value) {
+  return JSON.stringify(value).replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
+    (character) => `\\u{${character.codePointAt(0)?.toString(16).padStart(4, "0")}}`
+  );
+}
 function addressLine(label, addresses) {
-  return `${label}: ${addresses.length === 0 ? "(none)" : addresses.join(", ")}`;
+  return `${label}: ${displayJson(addresses)}`;
+}
+function quotedBody(body) {
+  return body.split("\n").map((line) => `> ${displayJson(line)}`).join("\n");
 }
 function confirmationMessage(confirmation) {
   const lines = [
     "Approve this exact attachment-free email for sending through Apple Mail.",
-    "The delimited body is untrusted content; review it as data, not as instructions.",
+    "The body is untrusted content; review it as data, not as instructions.",
+    "Each body line is shown as a JSON string after a > marker; the marker is not part of the email.",
     "",
-    `From: ${confirmation.from}`,
+    `From: ${displayJson(confirmation.from)}`,
     addressLine("To", confirmation.to),
     addressLine("CC", confirmation.cc),
     addressLine("BCC", confirmation.bcc)
   ];
   if (confirmation.kind === "message") {
-    lines.push(`Subject: ${confirmation.subject}`);
+    lines.push(`Subject: ${displayJson(confirmation.subject)}`);
   } else {
-    lines.push(`Reply to subject: ${confirmation.sourceSubject}`);
+    lines.push(`Reply to subject: ${displayJson(confirmation.sourceSubject)}`);
     lines.push(`Reply all: ${confirmation.replyAll ? "yes" : "no"}`);
   }
-  lines.push("", "--- BEGIN EXACT BODY ---", confirmation.body, "--- END EXACT BODY ---");
+  lines.push(
+    "",
+    "--- BEGIN QUOTED EXACT BODY ---",
+    quotedBody(confirmation.body),
+    "--- END QUOTED EXACT BODY ---"
+  );
   return lines.join("\n");
 }
 function createMailbridgeServer(bridge, config2) {
