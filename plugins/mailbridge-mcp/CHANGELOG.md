@@ -4,6 +4,12 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-17
+
+### Fixed
+
+- Release SBOM attestation now receives the exact generated CycloneDX file path instead of an unsupported wildcard.
+
 ## [0.2.0] - 2026-07-17
 
 ### Added
@@ -54,7 +60,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...v0.1.1

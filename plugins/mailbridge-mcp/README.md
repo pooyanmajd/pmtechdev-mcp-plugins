@@ -105,10 +105,10 @@ codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.2.0`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.2.1`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.1
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
