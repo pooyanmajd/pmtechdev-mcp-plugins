@@ -54,7 +54,7 @@ Read the workspace [Security](../../SECURITY.md), [Privacy](../../PRIVACY.md), a
 
 - macOS with Mail.app
 - At least one account configured and working in Mail.app
-- Node.js 20 or newer
+- Node.js 22 or 24
 - npm
 - An MCP client that supports local STDIO servers; the included plugin metadata targets Codex
 
@@ -217,9 +217,10 @@ npm test
 npm run test:coverage
 npm run check
 npm run pack:dry-run
+npm run smoke:package
 ```
 
-CI runs on macOS but never grants Automation permission or touches a live mailbox. Live Mail testing, where available, must be explicitly enabled and must never send, move, delete, or otherwise mutate real messages. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
+CI tests Node.js 22 and 24 on macOS but never grants Automation permission or touches a live mailbox. The packaged-plugin smoke installs the real tarball and calls only MCP initialization and `tools/list`. Live Mail testing, where available, must be explicitly enabled and must never send, move, delete, or otherwise mutate real messages. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
 
 ## Troubleshooting
 

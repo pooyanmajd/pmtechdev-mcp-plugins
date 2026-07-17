@@ -97,4 +97,4 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 ## Release evidence
 
-Record the commit SHA, Node version, macOS runner version, `npm ci`, `npm run check`, `npm run pack:dry-run`, plugin validator result, and skill validator result. Do not attach real email content, account IDs, Mail logs, or screenshots of private mailboxes to a public submission.
+Record the commit SHA, Node 22 and 24 versions, macOS runner version, `npm ci`, `npm run check`, coverage threshold result, packaged-plugin initialization and `tools/list` smoke result, plugin validator result, and skill/agent metadata validator result. Do not attach real email content, account IDs, Mail logs, or screenshots of private mailboxes to a public submission.

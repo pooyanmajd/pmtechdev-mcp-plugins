@@ -16,7 +16,7 @@
     "plugins/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "overrides": {
     "esbuild": "0.28.1"
@@ -27,9 +27,11 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "smoke:package": "node scripts/smoke-packaged-plugin.mjs",
+    "validate:metadata": "node scripts/validate-plugin-metadata.mjs",
     "validate:plugins": "npm run validate:package --workspaces --if-present",
     "validate:workspace": "node scripts/validate-workspace.mjs",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:plugins && npm run validate:workspace",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run validate:metadata && npm run validate:plugins && npm run validate:workspace && npm run smoke:package",
     "create:plugin": "node scripts/create-plugin.mjs"
   },
   "devDependencies": {
@@ -41,6 +43,7 @@
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.64.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "^2.9.0"
   }
 }

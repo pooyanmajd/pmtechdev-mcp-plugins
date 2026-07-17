@@ -15,9 +15,13 @@ concurrency:
 
 jobs:
   verify:
-    name: Workspace / Node 20 / macOS
+    name: Workspace / Node ${{ matrix.node-version }} / macOS
     runs-on: macos-14
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
     env:
       MAILBRIDGE_MODE: read-only
       CI: "true"
@@ -31,13 +35,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install locked workspace dependencies
         run: npm ci
 
-      - name: Run workspace checks
+      - name: Run coverage, metadata, and packaged-plugin checks
         run: npm run check
 
       - name: Audit published dependency surface
@@ -48,9 +52,6 @@ jobs:
 
       - name: Verify committed plugin bundles are current
         run: git diff --exit-code -- plugins/*/dist
-
-      - name: Inspect Mailbridge package contents
-        run: npm run pack:dry-run -w mailbridge-mcp
 
       - name: Confirm Mailbridge stays read-only in CI with no send surface
         run: test "$MAILBRIDGE_MODE" = "read-only" && ! grep -qE 'mail_send_draft|Mail\.send|sendDraft' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js

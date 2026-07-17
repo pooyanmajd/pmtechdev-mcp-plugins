@@ -29,7 +29,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "os": [
     "darwin"
@@ -47,7 +47,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "validate:package": "node scripts/validate-package.mjs",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:package",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run validate:package",
     "pack:dry-run": "npm pack --dry-run"
   },
   "keywords": [

@@ -2,19 +2,20 @@
 
 Releases are immutable review points for users who do not want to install a moving marketplace branch. Mailbridge uses repository tag `vX.Y.Z`, matching its package and plugin manifest version, and a GitHub release titled `mailbridge-mcp@X.Y.Z`.
 
+Repository administration must keep release immutability enabled and an active `v*` tag ruleset that blocks tag updates and deletion. These controls intentionally have no maintainer bypass.
+
 ## Prepare
 
 1. Update the plugin `package.json`, `.codex-plugin/plugin.json`, MCP server version, changelog, and documentation together.
-2. Run the complete workspace validation on macOS:
+2. Use Node.js 24 and run the complete workspace validation on macOS:
 
    ```bash
    npm ci
    npm run check
    npm audit --omit=dev
-   npm run pack:dry-run -w mailbridge-mcp
    ```
 
-3. Inspect the package dry-run and committed `dist/` diff. Confirm the fixed dispatcher and bundle still contain no send surface.
+3. Inspect the packaged-plugin smoke result and committed `dist/` diff. Confirm the installed executable completed MCP initialization and `tools/list` without invoking Mail, and that the fixed dispatcher and bundle still contain no send surface.
 4. Merge the release PR through protected `main`; do not tag an unreviewed branch.
 
 ## Publish
@@ -24,11 +25,11 @@ Create the version tag from the reviewed `main` commit. Use a signed annotated t
 ```bash
 git switch main
 git pull --ff-only
-git tag -s v0.1.0 -m "mailbridge-mcp@0.1.0"
-git push origin v0.1.0
+git tag -s vX.Y.Z -m "mailbridge-mcp@X.Y.Z"
+git push origin vX.Y.Z
 ```
 
-The tag starts `.github/workflows/release-mailbridge.yml`. The workflow requires GitHub to verify the annotated tag signature, repeats the workspace checks, validates the tag against all Mailbridge version declarations, packages the distributable plugin, generates a CycloneDX build SBOM and SHA-256 checksums, creates signed attestations, and publishes the GitHub release.
+The tag starts `.github/workflows/release-mailbridge.yml`. The workflow requires GitHub to verify the annotated tag signature, repeats the workspace checks, validates the tag against all Mailbridge version declarations, packages the distributable plugin, generates a CycloneDX build SBOM and SHA-256 checksums, creates signed attestations, attaches every asset to a draft release, and only then publishes the immutable GitHub release.
 
 If local tag signing is not configured, stop and configure an approved GPG or SSH signing identity rather than silently publishing an unsigned maintainer tag.
 

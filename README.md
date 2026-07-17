@@ -54,7 +54,7 @@ Only install Mailbridge in a trusted Codex or MCP host: the launching host recei
 
 ## Develop the workspace
 
-Requirements are Node.js 20 or newer and npm.
+Requirements are Node.js 22 or 24 and npm. These are the supported LTS lines tested on macOS.
 
 ```bash
 git clone https://github.com/pooyanmajd/pmtechdev-mcp-plugins.git
@@ -63,7 +63,7 @@ npm ci
 npm run check
 ```
 
-The root check runs typed tests and builds for every workspace, validates the committed plugin bundles, and checks marketplace consistency.
+The root check enforces coverage thresholds, builds every workspace, validates all plugin and skill metadata, installs the real Mailbridge tarball in a temporary directory, performs MCP initialization plus `tools/list` without invoking Mail, validates committed plugin bundles, and checks marketplace consistency.
 
 ## Create the next plugin
 
