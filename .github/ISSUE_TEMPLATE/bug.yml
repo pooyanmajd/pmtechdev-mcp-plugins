@@ -25,7 +25,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      placeholder: macOS 15.x; Node 20.x; Codex version …
+      placeholder: macOS 15.x; Node 22.x or 24.x; Codex version …
     validations:
       required: true
   - type: textarea

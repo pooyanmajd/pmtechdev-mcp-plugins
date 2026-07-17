@@ -49,7 +49,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Verify release tag and versions
@@ -106,7 +106,7 @@ jobs:
           subject-path: release/mailbridge-mcp-*.tgz
           sbom-path: release/mailbridge-mcp-*.build.cdx.json
 
-      - name: Publish GitHub release
+      - name: Create draft GitHub release with all assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -115,6 +115,12 @@ jobs:
             release/mailbridge-mcp-*.tgz \
             release/mailbridge-mcp-*.build.cdx.json \
             release/SHA256SUMS \
+            --draft \
             --verify-tag \
             --generate-notes \
             --title "mailbridge-mcp@${VERSION}"
+
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

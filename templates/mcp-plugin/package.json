@@ -4,12 +4,16 @@
   "private": true,
   "description": "A PMTechDev MCP server and Codex plugin",
   "type": "module",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
   "scripts": {
     "build": "tsup",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
