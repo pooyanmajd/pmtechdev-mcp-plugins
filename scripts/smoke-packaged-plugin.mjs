@@ -8,10 +8,19 @@ import { createInterface } from "node:readline";
 import { clearTimeout, setTimeout } from "node:timers";
 
 const protocolVersion = "2025-11-25";
-const expectedTools = new Set([
+// Tool registration is mode-scoped: each tool advertises only in the modes that can
+// use it, except the two access-preference tools, which are always registered.
+const readOnlyExpectedTools = new Set([
   "mail_list_accounts",
   "mail_search_messages",
   "mail_get_message",
+  "mailbridge_get_access_preferences",
+  "mailbridge_set_access_preferences",
+]);
+const promptedExpectedTools = new Set([
+  ...readOnlyExpectedTools,
+  "mail_set_message_state",
+  "mail_create_draft",
   "mail_send_message",
   "mail_send_reply",
 ]);
@@ -105,7 +114,7 @@ function requestClient(executable, args, cwd, extraEnvironment = {}) {
   return { close, request, send };
 }
 
-async function verifyClient(client) {
+async function verifyClient(client, expectedTools) {
   const initialized = await client.request(1, "initialize", {
     capabilities: {},
     clientInfo: { name: "mailbridge-package-smoke", version: "1.0.0" },
@@ -146,7 +155,7 @@ try {
   const client = requestClient(executable, [], installDirectory);
   let listedToolCount;
   try {
-    listedToolCount = await verifyClient(client);
+    listedToolCount = await verifyClient(client, readOnlyExpectedTools);
   } finally {
     await client.close();
   }
@@ -175,9 +184,13 @@ try {
     },
   );
   try {
-    const claudeToolCount = await verifyClient(claudeClient);
-    if (claudeToolCount !== listedToolCount) {
-      throw new Error("Claude plugin MCP registration listed a different tool count");
+    // The Claude plugin registration runs in prompted mode (MAILBRIDGE_MODE=prompted in
+    // .claude-plugin/plugin.json), which advertises a larger tool surface than the
+    // read-only default the raw binary was checked against above — mode-scoped
+    // registration means these counts are expected to differ, not match.
+    const claudeToolCount = await verifyClient(claudeClient, promptedExpectedTools);
+    if (claudeToolCount < listedToolCount) {
+      throw new Error("Claude plugin MCP registration listed fewer tools than the read-only default");
     }
   } finally {
     await claudeClient.close();

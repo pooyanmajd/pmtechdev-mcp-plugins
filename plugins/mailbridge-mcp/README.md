@@ -108,10 +108,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.3.0`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.4.0`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.3.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -124,7 +124,7 @@ The bundled marketplace registrations intentionally expose all accounts configur
 The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh exact-content form elicitation. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.3.0
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
@@ -185,6 +185,14 @@ MAILBRIDGE_ALLOWED_ACCOUNTS=sender@example.com
 
 Do not put passwords or provider tokens in either value. Before every send call, show the exact recipients, subject, and substantive body to the user and obtain explicit approval. A successful tool result means Mail.app accepted the message for sending; it does not prove provider delivery or recipient receipt.
 
+### Local access preferences
+
+An explicitly set `MAILBRIDGE_MODE` or `MAILBRIDGE_ALLOWED_ACCOUNTS` environment variable always wins. When a variable is left unset, Mailbridge falls back to a local, per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under `XDG_CONFIG_HOME` if you set it to an absolute path), written with `0600` permissions and never part of this git repository or the shared plugin package. Use `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` to read and save it — an assistant using Mailbridge should list your real accounts, ask which to allow and at what mode, and save that choice through these tools rather than editing any configuration file directly. Saving preferences does not change the currently running server; the change takes effect on the next restart or reconnect, and each tool response reports whether an environment variable is shadowing the field you just set.
+
+`mailbridge_set_access_preferences` cannot set `send` mode. A model-supplied `confirmed: true` is not an independently verified human confirmation, so this tool is restricted to `read-only`/`drafts`/`full`/`prompted`; enabling unconfirmed direct sending stays a manual environment-variable change you make yourself (see [Configuration](#configuration) above).
+
+The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
+
 ## MCP tools
 
 | Tool | Effect | Availability |
@@ -201,6 +209,8 @@ Do not put passwords or provider tokens in either value. Before every send call,
 | `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
 | `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `prompted` / `send` |
 | `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `prompted` / `send` |
+| `mailbridge_get_access_preferences` | Read locally saved mode/account preferences (if any) alongside what this running server is actually using right now. | Any mode |
+| `mailbridge_set_access_preferences` | Save mode and account allowlist preferences locally for future sessions; requires `confirmed: true`. Does not affect the currently running server. | Any mode |
 
 Sending edited drafts, forwards, attachments, or batches—and permanent deletion, mailbox/rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management—remain out of scope.
 
@@ -280,6 +290,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `SEND_CONTENT_CHANGED` | Mail changed the constructed outgoing subject or body before submission. Review Mail settings and do not bypass the check. |
 | `SEND_TARGET_CHANGED` | Mail resolved reply recipients that differ from the approved sets. Refresh the message, show the new target, and request fresh approval. |
 | `AUTOMATION_BUSY` | Wait for the current Mail automation operation to finish before retrying. |
+| `CONFIRMATION_BUSY` | Too many send confirmations are already pending. Wait for one to resolve before requesting another. |
 | `INVALID_INPUT` / `INVALID_CONFIG` | Correct the bounded tool arguments or environment configuration; do not retry unchanged. |
 | `ACCOUNT_NOT_ALLOWED` | Select an account in `MAILBRIDGE_ALLOWED_ACCOUNTS`, or deliberately revise the allowlist before restart. |
 | `ATTACHMENT_TOO_LARGE` / `RESPONSE_TOO_LARGE` | Request less data; Mailbridge will not bypass its configured limits. |

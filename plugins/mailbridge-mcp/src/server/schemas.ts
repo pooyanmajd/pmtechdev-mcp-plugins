@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { allowlistEmail, MAX_LOCAL_ALLOWED_ACCOUNTS } from "../local-config.js";
+
 const OPAQUE_ID_MAX_CHARS = 4_096;
 const SEARCH_CURSOR_MAX_CHARS = 128 * 1024;
 const MAX_QUERY_CHARS = 2_000;
@@ -172,6 +174,36 @@ export const sendReplyInputSchema = z
   })
   .strict();
 
+export const mailbridgeGetAccessPreferencesInputSchema = z.object({}).strict();
+
+const confirmedAccessPreferences = z.literal(true).describe(
+  "Must be true only after the exact mode and account list above were shown to and approved by the user in chat.",
+);
+
+// Deliberately excludes "send": a model-supplied confirmed:true is not an independently
+// verified human confirmation, so this tool must never be able to grant standing,
+// unconfirmed send authority. Elevating to direct send mode stays a manual,
+// human-performed environment-variable change — see docs/SEND_SECURITY_REVIEW.md.
+const LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"] as const;
+
+export const mailbridgeSetAccessPreferencesInputSchema = z
+  .object({
+    mode: z
+      .enum(LOCALLY_SETTABLE_MODES)
+      .describe(
+        "Global Mailbridge permission level to save for future sessions. Direct send mode cannot be set through this tool; it requires a manual environment-variable change by the user.",
+      ),
+    allowedAccounts: z
+      .array(allowlistEmail)
+      .min(1)
+      .max(MAX_LOCAL_ALLOWED_ACCOUNTS)
+      .describe(
+        "Complete replacement list of Mail.app account email addresses to allow. Replaces any previously saved list; this is not a delta/append.",
+      ),
+    confirmed: confirmedAccessPreferences,
+  })
+  .strict();
+
 export const toolOutputSchema = z.object({
   ok: z.boolean(),
   data: z.unknown().optional(),
@@ -196,6 +228,8 @@ export const TOOL_NAMES = [
   "mail_create_forward_draft",
   "mail_send_message",
   "mail_send_reply",
+  "mailbridge_get_access_preferences",
+  "mailbridge_set_access_preferences",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -213,4 +247,6 @@ export const inputSchemas = {
   mail_create_forward_draft: createForwardDraftInputSchema,
   mail_send_message: sendMessageInputSchema,
   mail_send_reply: sendReplyInputSchema,
+  mailbridge_get_access_preferences: mailbridgeGetAccessPreferencesInputSchema,
+  mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema,
 } as const satisfies Record<ToolName, z.ZodType>;

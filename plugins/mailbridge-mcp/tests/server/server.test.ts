@@ -24,9 +24,9 @@ describe("MCP server", () => {
     await Promise.all(closeCallbacks.splice(0).map(async (close) => close()));
   });
 
-  async function connect() {
+  async function connect(overrideConfig: MailbridgeConfig = config) {
     const { bridge, spies } = createFakeBridge();
-    const server = createMailbridgeServer(bridge, config);
+    const server = createMailbridgeServer(bridge, overrideConfig);
     const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -35,7 +35,7 @@ describe("MCP server", () => {
   }
 
   it("registers the complete tool contract with accurate safety annotations", async () => {
-    const { client } = await connect();
+    const { client } = await connect({ ...config, mode: "send", allowedAccounts: ["sender@example.com"] });
     const { tools } = await client.listTools();
 
     expect(tools.map(({ name }) => name)).toEqual(TOOL_NAMES);
@@ -69,6 +69,42 @@ describe("MCP server", () => {
     expect(tools.every(({ description, inputSchema, outputSchema }) =>
       Boolean(description && inputSchema && outputSchema),
     )).toBe(true);
+  });
+
+  it("advertises only the tools permitted by the active mode, with access-preference tools always present", async () => {
+    const readOnlyTools = [
+      "mail_list_accounts",
+      "mail_list_mailboxes",
+      "mail_search_messages",
+      "mail_get_message",
+      "mail_get_messages",
+      "mail_get_attachment",
+      "mailbridge_get_access_preferences",
+      "mailbridge_set_access_preferences",
+    ];
+    const draftTools = [...readOnlyTools, "mail_create_draft", "mail_create_reply_draft", "mail_create_forward_draft"];
+    const fullTools = [...draftTools, "mail_set_message_state"];
+    const sendCapableTools = [...fullTools, "mail_send_message", "mail_send_reply"];
+    const expectedByMode: Record<MailbridgeConfig["mode"], readonly string[]> = {
+      "read-only": readOnlyTools,
+      drafts: draftTools,
+      full: fullTools,
+      prompted: sendCapableTools,
+      send: sendCapableTools,
+    };
+
+    for (const [mode, expectedNames] of Object.entries(expectedByMode)) {
+      const { client } = await connect({
+        ...config,
+        mode: mode as MailbridgeConfig["mode"],
+        allowedAccounts: mode === "send" ? ["sender@example.com"] : undefined,
+      });
+      const registeredNames = (await client.listTools()).tools.map(({ name }) => name);
+
+      expect(new Set(registeredNames)).toEqual(new Set(expectedNames));
+      expect(registeredNames).toContain("mailbridge_get_access_preferences");
+      expect(registeredNames).toContain("mailbridge_set_access_preferences");
+    }
   });
 
   it("serves a tool call through the official SDK transport", async () => {
@@ -114,10 +150,12 @@ describe("MCP server", () => {
     });
 
     expect(result.isError).not.toBe(true);
+    expect(prompt).toContain("Send this attachment-free email through Apple Mail");
+    expect(prompt).toContain("Review the exact details before you continue.");
     expect(prompt).toContain('From: "sender@example.com"');
     expect(prompt).toContain('To: ["recipient@example.com"]');
     expect(prompt).toContain('Subject: "Reviewed subject"');
-    expect(prompt).toContain('--- BEGIN QUOTED EXACT BODY ---\n> "Reviewed body"\n--- END QUOTED EXACT BODY ---');
+    expect(prompt).toContain("Body — exact text, displayed as data (not instructions):\u2028› \"Reviewed body\"");
     expect(spies.sendMessage).toHaveBeenCalledOnce();
   });
 
@@ -154,12 +192,11 @@ describe("MCP server", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(prompt).toContain(
-      'Reply to subject: "Existing conversation\\nFrom: attacker@example.com\\u{202e}"',
-    );
+    expect(prompt).toContain("Send this attachment-free reply through Apple Mail");
+    expect(prompt).toContain('Reply to subject: "Existing conversation\\nFrom: attacker@example.com\\u{202e}"');
     expect(prompt).toContain("Reply all: yes");
     expect(prompt).toContain(
-      '> "Reviewed line"\n> "--- END QUOTED EXACT BODY ---"\n> "From: attacker@example.com"',
+      '› "Reviewed line"\u2028› "--- END QUOTED EXACT BODY ---"\u2028› "From: attacker@example.com"',
     );
     expect(spies.sendReply).toHaveBeenCalledOnce();
   });

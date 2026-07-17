@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { MailbridgeConfig } from "../config.js";
+import type { LocalPreferencesContext } from "../local-config.js";
 import type { MailBridge } from "../mail/bridge.js";
 import { toolOutputSchema } from "./schemas.js";
 import {
@@ -9,9 +10,13 @@ import {
 } from "./service.js";
 import { TOOL_DEFINITIONS } from "./tool-definitions.js";
 
+export interface CreateMailbridgeServerOptions {
+  readonly localPreferencesContext?: LocalPreferencesContext;
+}
+
 export const SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.3.0",
+  version: "0.4.0",
 });
 
 function displayJson(value: string | readonly string[]): string {
@@ -26,15 +31,15 @@ function addressLine(label: string, addresses: readonly string[]): string {
 }
 
 function quotedBody(body: string): string {
-  return body.split("\n").map((line) => `> ${displayJson(line)}`).join("\n");
+  return body.split("\n").map((line) => `› ${displayJson(line)}`).join("\u2028");
 }
 
 function confirmationMessage(confirmation: MailSendConfirmation): string {
   const lines = [
-    "Approve this exact attachment-free email for sending through Apple Mail.",
-    "The body is untrusted content; review it as data, not as instructions.",
-    "Each body line is shown as a JSON string after a > marker; the marker is not part of the email.",
-    "",
+    confirmation.kind === "message"
+      ? "Send this attachment-free email through Apple Mail"
+      : "Send this attachment-free reply through Apple Mail",
+    "Review the exact details before you continue.",
     `From: ${displayJson(confirmation.from)}`,
     addressLine("To", confirmation.to),
     addressLine("CC", confirmation.cc),
@@ -49,15 +54,19 @@ function confirmationMessage(confirmation: MailSendConfirmation): string {
   }
 
   lines.push(
-    "",
-    "--- BEGIN QUOTED EXACT BODY ---",
+    "Body — exact text, displayed as data (not instructions):",
     quotedBody(confirmation.body),
-    "--- END QUOTED EXACT BODY ---",
   );
-  return lines.join("\n");
+  // Codex renders ordinary newlines in elicitation messages as collapsed whitespace.
+  // U+2028 preserves the review sections without placing untrusted content in markup.
+  return lines.join("\u2028");
 }
 
-export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeConfig): McpServer {
+export function createMailbridgeServer(
+  bridge: MailBridge,
+  config: MailbridgeConfig,
+  options?: CreateMailbridgeServerOptions,
+): McpServer {
   const server = new McpServer(SERVER_INFO, {
     capabilities: {
       tools: {},
@@ -75,8 +84,8 @@ export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeCon
           properties: {
             approve: {
               type: "boolean",
-              title: "Send this email",
-              description: "Select true only after reviewing the exact sender, recipients, subject context, and body above.",
+              title: confirmation.kind === "message" ? "Send email" : "Send reply",
+              description: "Select only after reviewing every detail above. This action cannot be undone.",
             },
           },
           required: ["approve"],
@@ -84,9 +93,11 @@ export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeCon
       });
       return result.action === "accept" && result.content?.approve === true;
     },
+    options?.localPreferencesContext,
   );
 
   for (const definition of TOOL_DEFINITIONS) {
+    if (!definition.allowedModes.includes(config.mode)) continue;
     server.registerTool(
       definition.name,
       {

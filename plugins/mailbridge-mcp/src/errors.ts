@@ -20,6 +20,8 @@ export const MAILBRIDGE_ERROR_CODES = [
   "ATTACHMENT_TOO_LARGE",
   "UNSUPPORTED_ATTACHMENT",
   "RESPONSE_TOO_LARGE",
+  "LOCAL_PREFERENCES_WRITE_FAILED",
+  "CONFIRMATION_BUSY",
 ] as const;
 
 export type MailbridgeErrorCode = (typeof MAILBRIDGE_ERROR_CODES)[number];
@@ -46,6 +48,8 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   ATTACHMENT_TOO_LARGE: "The attachment exceeds the configured response limit.",
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",
+  LOCAL_PREFERENCES_WRITE_FAILED: "Mailbridge could not save local access preferences to disk.",
+  CONFIRMATION_BUSY: "Mailbridge has too many send confirmations already pending. Wait before retrying.",
 });
 
 export class MailbridgeError extends Error {

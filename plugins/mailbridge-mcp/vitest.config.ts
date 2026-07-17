@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
-      include: ["src/config.ts", "src/errors.ts", "src/mail/**/*.ts", "src/server/**/*.ts"],
+      include: ["src/config.ts", "src/local-config.ts", "src/errors.ts", "src/mail/**/*.ts", "src/server/**/*.ts"],
       thresholds: {
         lines: 80,
         functions: 80,

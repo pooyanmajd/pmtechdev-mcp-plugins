@@ -26,6 +26,11 @@ Write tools:
 - `mail_send_message` (one confirmed attachment-free new message)
 - `mail_send_reply` (one confirmed attachment-free reply or reply-all)
 
+Local preference tools (server self-configuration, not Mail data; available in every mode):
+
+- `mailbridge_get_access_preferences`
+- `mailbridge_set_access_preferences` (requires literal `confirmed: true`)
+
 Explicitly out of scope: sending edited drafts, forwards, attachments, or batches; permanent deletion; mailbox/rule CRUD; direct database access; arbitrary AppleScript execution; background monitoring; remote MCP hosting; and credential management.
 
 ## Data and identity
@@ -38,7 +43,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 ## Runtime architecture
 
 1. `src/cli.ts` parses configuration and starts the STDIO server.
-2. `src/server/` registers MCP tools, schemas, annotations, and output formatting.
+2. `src/server/` registers MCP tools, schemas, annotations, and output formatting. Registration is mode-scoped; see [Architecture](ARCHITECTURE.md) for the advertising-vs-enforcement split.
 3. `src/mail/` defines the bridge interface and domain values.
 4. `src/mail/runner.ts` invokes the fixed `runtime/mailbridge.jxa.js` dispatcher through `/usr/bin/osascript -l JavaScript`.
 5. JXA receives one bounded UTF-8 JSON request through stdin; no input is embedded into executable source, process arguments, environment variables, or temporary request files.
@@ -52,6 +57,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 - `MAILBRIDGE_MAX_RESULTS` caps search results (hard maximum 100)
 - `MAILBRIDGE_MAX_BODY_CHARS` caps returned message text
 - `MAILBRIDGE_TIMEOUT_MS` caps every automation subprocess
+- An unset mode/allowlist falls back to a local per-user preferences file before the built-in `read-only` default; see [README § Local access preferences](../README.md#local-access-preferences).
 
 ## MCP annotations
 
