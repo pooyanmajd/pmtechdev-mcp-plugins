@@ -15,6 +15,8 @@ import {
   listAccountsInputSchema,
   listMailboxesInputSchema,
   searchMessagesInputSchema,
+  sendMessageInputSchema,
+  sendReplyInputSchema,
   setMessageStateInputSchema,
   type ToolName,
 } from "./schemas.js";
@@ -81,7 +83,13 @@ export class MailbridgeToolService {
   }
 
   private requireFullMode(): void {
-    if (this.config.mode !== "full") {
+    if (this.config.mode !== "full" && this.config.mode !== "send") {
+      throw new MailbridgeError("READ_ONLY");
+    }
+  }
+
+  private requireSendMode(): void {
+    if (this.config.mode !== "send") {
       throw new MailbridgeError("READ_ONLY");
     }
   }
@@ -176,6 +184,16 @@ export class MailbridgeToolService {
         this.requireDraftsMode();
         const input = parseInput(createForwardDraftInputSchema, rawInput);
         return this.runMutation(async () => this.bridge.createForwardDraft(input));
+      }
+      case "mail_send_message": {
+        this.requireSendMode();
+        const input = parseInput(sendMessageInputSchema, rawInput);
+        return this.runMutation(async () => this.bridge.sendMessage(input));
+      }
+      case "mail_send_reply": {
+        this.requireSendMode();
+        const input = parseInput(sendReplyInputSchema, rawInput);
+        return this.runMutation(async () => this.bridge.sendReply(input));
       }
     }
   }

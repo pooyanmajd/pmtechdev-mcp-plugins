@@ -113,6 +113,42 @@ export const createForwardDraftInputSchema = z
   .strict()
   .refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
 
+const confirmedSend = z.literal(true).describe(
+  "Must be true only after the user has explicitly approved the exact recipients, subject, and body.",
+);
+
+const substantiveBody = z
+  .string()
+  .max(MAX_OUTGOING_BODY_CHARS)
+  .refine((body) => body.trim().length > 0, { message: "A non-empty message body is required." });
+
+export const sendMessageInputSchema = z
+  .object({
+    accountId: opaqueId.describe("Opaque account ID returned by mail_list_accounts."),
+    from: emailAddress.describe("Sender address belonging to the selected and allowed account."),
+    to: recipients.default([]),
+    cc: recipients.default([]),
+    bcc: recipients.default([]),
+    subject: z.string().max(MAX_SUBJECT_CHARS).default(""),
+    body: substantiveBody,
+    confirmed: confirmedSend,
+  })
+  .strict()
+  .refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
+
+export const sendReplyInputSchema = z
+  .object({
+    messageId: opaqueId.describe("Opaque source message ID returned by mail_search_messages."),
+    from: emailAddress.describe("Sender address belonging to an allowed account."),
+    expectedTo: recipients.min(1).describe("Exact To recipients approved by the user; Mail's resolved reply must match."),
+    expectedCc: recipients.default([]).describe("Exact CC recipients approved by the user; Mail's resolved reply must match."),
+    expectedBcc: recipients.default([]).describe("Exact BCC recipients approved by the user; Mail's resolved reply must match."),
+    replyAll: z.boolean().default(false),
+    body: substantiveBody,
+    confirmed: confirmedSend,
+  })
+  .strict();
+
 export const toolOutputSchema = z.object({
   ok: z.boolean(),
   data: z.unknown().optional(),
@@ -135,6 +171,8 @@ export const TOOL_NAMES = [
   "mail_create_draft",
   "mail_create_reply_draft",
   "mail_create_forward_draft",
+  "mail_send_message",
+  "mail_send_reply",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -150,4 +188,6 @@ export const inputSchemas = {
   mail_create_draft: createDraftInputSchema,
   mail_create_reply_draft: createReplyDraftInputSchema,
   mail_create_forward_draft: createForwardDraftInputSchema,
+  mail_send_message: sendMessageInputSchema,
+  mail_send_reply: sendReplyInputSchema,
 } as const satisfies Record<ToolName, z.ZodType>;

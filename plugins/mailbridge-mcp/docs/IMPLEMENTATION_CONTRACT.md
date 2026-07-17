@@ -4,7 +4,7 @@
 
 Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
 
-The first public release is intentionally complete for safe inbox workflows, not for mailbox administration.
+The public surface is intentionally bounded to safe inbox workflows and explicit, attachment-free single-message sending—not mailbox administration.
 
 ## Tool surface
 
@@ -23,8 +23,10 @@ Write tools:
 - `mail_create_draft`
 - `mail_create_reply_draft`
 - `mail_create_forward_draft`
+- `mail_send_message` (one confirmed attachment-free new message)
+- `mail_send_reply` (one confirmed attachment-free reply or reply-all)
 
-Explicitly out of scope for v0.1: sending, permanent deletion, mailbox/rule CRUD, direct database access, arbitrary AppleScript execution, background monitoring, remote MCP hosting, and credential management.
+Explicitly out of scope: sending edited drafts, forwards, attachments, or batches; permanent deletion; mailbox/rule CRUD; direct database access; arbitrary AppleScript execution; background monitoring; remote MCP hosting; and credential management.
 
 ## Data and identity
 
@@ -44,9 +46,9 @@ Explicitly out of scope for v0.1: sending, permanent deletion, mailbox/rule CRUD
 
 ## Configuration
 
-- `MAILBRIDGE_MODE=read-only|drafts|full` (default `read-only`)
-- v0.1 exposes no send operation; sending remains a manual Mail.app action.
-- `MAILBRIDGE_ALLOWED_ACCOUNTS` optionally limits account email addresses (comma-separated)
+- `MAILBRIDGE_MODE=read-only|drafts|full|send` (default `read-only`)
+- `full` retains its historical non-send behavior. Only `send` enables `mail_send_message` and `mail_send_reply`.
+- `MAILBRIDGE_ALLOWED_ACCOUNTS` optionally limits account email addresses (comma-separated) and is mandatory in `send` mode.
 - `MAILBRIDGE_MAX_RESULTS` caps search results (hard maximum 100)
 - `MAILBRIDGE_MAX_BODY_CHARS` caps returned message text
 - `MAILBRIDGE_TIMEOUT_MS` caps every automation subprocess
@@ -55,10 +57,11 @@ Explicitly out of scope for v0.1: sending, permanent deletion, mailbox/rule CRUD
 
 - List/search/get tools: `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`.
 - State and draft tools: `readOnlyHint=false`, `destructiveHint=false`, `openWorldHint=false`.
+- Send tools: `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=false`, `openWorldHint=true`.
 
 ## Error model
 
-Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
+Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
 
 ## Packaging
 

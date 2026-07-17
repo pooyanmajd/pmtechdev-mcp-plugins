@@ -51,6 +51,18 @@ describe("MCP server", () => {
       idempotentHint: true,
       openWorldHint: false,
     });
+    expect(tools.find(({ name }) => name === "mail_send_message")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    expect(tools.find(({ name }) => name === "mail_send_reply")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
     expect(tools.some(({ name }) => name === "mail_send_draft")).toBe(false);
     expect(tools.every(({ description, inputSchema, outputSchema }) =>
       Boolean(description && inputSchema && outputSchema),

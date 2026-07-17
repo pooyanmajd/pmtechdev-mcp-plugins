@@ -31,6 +31,19 @@ describe("loadConfig", () => {
     });
   });
 
+  it("requires an explicit account allowlist in send mode", () => {
+    expect(() => loadConfig({ MAILBRIDGE_MODE: "send" })).toThrow(ConfigError);
+    expect(() => loadConfig({ MAILBRIDGE_MODE: "send" })).toThrow(
+      "MAILBRIDGE_ALLOWED_ACCOUNTS",
+    );
+    expect(
+      loadConfig({
+        MAILBRIDGE_MODE: "send",
+        MAILBRIDGE_ALLOWED_ACCOUNTS: "sender@example.com",
+      }).mode,
+    ).toBe("send");
+  });
+
   it.each([
     [{ MAILBRIDGE_MODE: "write" }, "MAILBRIDGE_MODE"],
     [{ MAILBRIDGE_MAX_RESULTS: "0" }, "MAILBRIDGE_MAX_RESULTS"],

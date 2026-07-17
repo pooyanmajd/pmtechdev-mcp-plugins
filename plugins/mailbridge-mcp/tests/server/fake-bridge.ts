@@ -17,6 +17,8 @@ export function createFakeBridge(): {
     createDraft: vi.fn().mockResolvedValue({}),
     createReplyDraft: vi.fn().mockResolvedValue({}),
     createForwardDraft: vi.fn().mockResolvedValue({}),
+    sendMessage: vi.fn().mockResolvedValue({}),
+    sendReply: vi.fn().mockResolvedValue({}),
   } satisfies Record<keyof MailBridge, ReturnType<typeof vi.fn>>;
 
   return {

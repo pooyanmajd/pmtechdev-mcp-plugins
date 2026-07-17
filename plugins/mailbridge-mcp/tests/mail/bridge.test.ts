@@ -319,6 +319,113 @@ describe("AppleMailBridge", () => {
     ]);
   });
 
+  it("sends only explicitly confirmed, attachment-free messages and replies from allowlisted accounts", async () => {
+    const runner = new FakeRunner();
+    const rawSend = {
+      accountKey: "account-1",
+      sender: "allowed@example.com",
+      subject: "Approved subject",
+      recipients: {
+        to: [{ address: "to@example.com" }],
+        cc: [],
+        bcc: [],
+      },
+      acceptedForSending: true,
+    };
+    runner.enqueue(rawSend);
+    runner.enqueue({ ...rawSend, subject: "Re: Approved subject" });
+    const bridge = makeBridge(runner, ["allowed@example.com"]);
+    const messageId = encodeMailId("message", MESSAGE_LOCATOR);
+
+    const sent = await bridge.sendMessage({
+      accountId: encodeMailId("account", ACCOUNT_LOCATOR),
+      from: "ALLOWED@example.com",
+      to: ["TO@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    });
+    const reply = await bridge.sendReply({
+      messageId,
+      from: "allowed@example.com",
+      expectedTo: ["TO@example.com"],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    });
+
+    expect(sent).toMatchObject({
+      accountId: encodeMailId("account", ACCOUNT_LOCATOR),
+      acceptedForSending: true,
+      recipients: { to: [{ address: "to@example.com" }] },
+    });
+    expect(reply.acceptedForSending).toBe(true);
+    expect(runner.requests).toMatchObject([
+      {
+        operation: "sendMessage",
+        input: {
+          account: ACCOUNT_LOCATOR,
+          from: "allowed@example.com",
+          to: ["to@example.com"],
+          body: "Approved body",
+          confirmed: true,
+        },
+      },
+      {
+        operation: "sendReply",
+        input: {
+          message: MESSAGE_LOCATOR,
+          from: "allowed@example.com",
+          expectedTo: ["to@example.com"],
+          expectedCc: [],
+          expectedBcc: [],
+          body: "Approved reply",
+          confirmed: true,
+        },
+      },
+    ]);
+  });
+
+  it("rejects unconfirmed sends, empty bodies, and send attempts without an allowlist", async () => {
+    const runner = new FakeRunner();
+    const unrestricted = makeBridge(runner);
+    const allowlisted = makeBridge(runner, ["allowed@example.com"]);
+    const accountId = encodeMailId("account", ACCOUNT_LOCATOR);
+    const messageId = encodeMailId("message", MESSAGE_LOCATOR);
+
+    await expect(
+      allowlisted.sendMessage({
+        accountId,
+        from: "allowed@example.com",
+        to: ["to@example.com"],
+        subject: "Subject",
+        body: "Body",
+        confirmed: false as true,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(
+      allowlisted.sendReply({
+        messageId,
+        from: "allowed@example.com",
+        expectedTo: ["to@example.com"],
+        body: "   ",
+        confirmed: true,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(
+      unrestricted.sendMessage({
+        accountId,
+        from: "allowed@example.com",
+        to: ["to@example.com"],
+        subject: "Subject",
+        body: "Body",
+        confirmed: true,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+
+    expect(runner.requests).toHaveLength(0);
+  });
+
   it("rejects empty recipient lists and invalid state types before automation", async () => {
     const runner = new FakeRunner();
     const bridge = makeBridge(runner);

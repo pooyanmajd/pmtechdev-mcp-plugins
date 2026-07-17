@@ -8,7 +8,13 @@ import { createInterface } from "node:readline";
 import { clearTimeout, setTimeout } from "node:timers";
 
 const protocolVersion = "2025-11-25";
-const expectedTools = new Set(["mail_list_accounts", "mail_search_messages", "mail_get_message"]);
+const expectedTools = new Set([
+  "mail_list_accounts",
+  "mail_search_messages",
+  "mail_get_message",
+  "mail_send_message",
+  "mail_send_reply",
+]);
 const temporaryRoot = await mkdtemp(join(tmpdir(), "mailbridge-package-smoke-"));
 const npmEnvironment = { ...process.env, npm_config_cache: resolve(temporaryRoot, "npm-cache") };
 

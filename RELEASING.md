@@ -15,7 +15,7 @@ Repository administration must keep release immutability enabled and an active `
    npm audit
    ```
 
-3. Inspect the packaged-plugin smoke result and committed `dist/` diff. Confirm the installed executable completed MCP initialization and `tools/list` without invoking Mail, and that the fixed dispatcher and bundle still contain no send surface.
+3. Inspect the packaged-plugin smoke result and committed `dist/` diff. Confirm the installed executable completed MCP initialization and `tools/list` without invoking Mail, and that the fixed dispatcher and bundle contain only the reviewed atomic send surface—never draft, forward, attachment, or bulk sending.
 4. Merge the release PR through protected `main`; do not tag an unreviewed branch.
 
 ## Publish
@@ -49,4 +49,4 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref vX.Y.Z
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-Start a new Codex task, confirm the plugin is read-only by default, and use only deterministic or synthetic data during release verification. Live Mail access remains opt-in and must never send, delete, move, or bulk-mutate real content.
+Start a new Codex task, confirm the plugin is read-only by default, and use only deterministic or synthetic data during release verification. Live Mail access remains opt-in and release verification must never send, delete, move, or bulk-mutate real content.

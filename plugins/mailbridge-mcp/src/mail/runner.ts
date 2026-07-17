@@ -17,6 +17,8 @@ export const AUTOMATION_OPERATIONS = [
   "createDraft",
   "createReplyDraft",
   "createForwardDraft",
+  "sendMessage",
+  "sendReply",
 ] as const;
 
 export type AutomationOperation = (typeof AUTOMATION_OPERATIONS)[number];

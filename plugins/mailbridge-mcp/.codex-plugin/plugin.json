@@ -1,7 +1,7 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.1.2",
-  "description": "Safely search, read, and draft mail through accounts configured in macOS Mail.",
+  "version": "0.2.0",
+  "description": "Safely search, read, draft, and explicitly send mail through accounts configured in macOS Mail.",
   "author": {
     "name": "PMTechDev",
     "email": "pooyanmjd@gmail.com",
@@ -15,17 +15,17 @@
   "interface": {
     "displayName": "Mailbridge MCP",
     "shortDescription": "Connect Codex safely to macOS Mail.",
-    "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, and draft-only composition workflows.",
+    "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, draft workflows, and opt-in confirmed sending.",
     "developerName": "PMTechDev",
     "category": "Productivity",
-    "capabilities": ["Search", "Read", "Draft"],
+    "capabilities": ["Search", "Read", "Draft", "Send"],
     "websiteURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp",
     "privacyPolicyURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/TERMS.md",
     "defaultPrompt": [
       "Read my latest three Inbox messages across configured accounts.",
       "Find a message, then summarize it safely.",
-      "Draft a reply and wait for my approval."
+      "Draft an exact reply, show it, and send only after I explicitly approve that content."
     ],
     "brandColor": "#276B8C",
     "composerIcon": "./assets/icon.svg",

@@ -1,4 +1,4 @@
-export const MAILBRIDGE_MODES = ["read-only", "drafts", "full"] as const;
+export const MAILBRIDGE_MODES = ["read-only", "drafts", "full", "send"] as const;
 
 export type MailbridgeMode = (typeof MAILBRIDGE_MODES)[number];
 
@@ -41,7 +41,7 @@ function parseMode(value: string | undefined): MailbridgeMode {
     return value as MailbridgeMode;
   }
 
-  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, or full.");
+  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, full, or send.");
 }
 
 function parsePositiveInteger(
@@ -89,9 +89,17 @@ function parseAllowedAccounts(value: string | undefined): readonly string[] | un
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): MailbridgeConfig {
+  const mode = parseMode(env.MAILBRIDGE_MODE);
+  const allowedAccounts = parseAllowedAccounts(env.MAILBRIDGE_ALLOWED_ACCOUNTS);
+  if (mode === "send" && allowedAccounts === undefined) {
+    throw new ConfigError(
+      "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send.",
+    );
+  }
+
   return {
-    mode: parseMode(env.MAILBRIDGE_MODE),
-    allowedAccounts: parseAllowedAccounts(env.MAILBRIDGE_ALLOWED_ACCOUNTS),
+    mode,
+    allowedAccounts,
     maxResults: parsePositiveInteger(
       "MAILBRIDGE_MAX_RESULTS",
       env.MAILBRIDGE_MAX_RESULTS,

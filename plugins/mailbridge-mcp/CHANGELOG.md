@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-17
+
+### Added
+
+- Opt-in `mail_send_message` and `mail_send_reply` tools for one confirmed attachment-free new message or reply.
+- A dedicated send capability design and security review covering authorization, prompt injection, attachment, duplicate-send, and delivery-status risks.
+- Stable `SEND_REJECTED` handling and deterministic fixed-dispatcher send tests.
+
+### Security
+
+- Sending requires the new `send` mode, a non-empty `MAILBRIDGE_ALLOWED_ACCOUNTS`, a substantive bounded body, and literal per-call confirmation.
+- Existing `full` configurations remain unable to send, preventing privilege escalation on upgrade.
+- Edited drafts, forwards, attachments, and bulk sends remain unsupported; uncertain send outcomes fail with `MUTATION_OUTCOME_UNKNOWN` and must not be retried blindly.
+
 ## [0.1.2] - 2026-07-17
 
 ### Changed
@@ -40,7 +54,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0

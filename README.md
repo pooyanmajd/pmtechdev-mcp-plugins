@@ -12,9 +12,9 @@ The repository keeps each integration independently buildable under `plugins/`, 
 
 | Plugin | Purpose | Platforms | Status |
 | --- | --- | --- | --- |
-| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, and create drafts through accounts configured in macOS Mail. | macOS | `0.1.2` |
+| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | `0.2.0` |
 
-Mailbridge is draft-only in v0.1 and intentionally exposes no send operation.
+Mailbridge remains read-only by default. Version 0.2 adds opt-in, allowlisted, confirmed sending for attachment-free new messages and replies; existing `full` configurations do not gain send authority.
 
 ## Repository layout
 
@@ -41,10 +41,10 @@ codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For a reviewed, immutable version, pin the marketplace to the Mailbridge `0.1.2` release tag instead:
+For a reviewed, immutable version, pin the marketplace to the Mailbridge `0.2.0` release tag instead:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.1.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 

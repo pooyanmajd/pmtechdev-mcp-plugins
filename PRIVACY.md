@@ -6,13 +6,13 @@ This repository contains open-source MCP servers and Codex plugins. PMTechDev do
 
 ## Data plugins can process
 
-Each plugin documents its own data surface. The current Mailbridge plugin can process account and mailbox metadata, message metadata and selected content, downloaded attachments, draft content, and read or flagged state at the user's direction.
+Each plugin documents its own data surface. The current Mailbridge plugin can process account and mailbox metadata, message metadata and selected content, downloaded attachments, draft content, read or flagged state, and explicitly approved outgoing message content at the user's direction.
 
 Connected information can be personal, confidential, or legally protected. Use the narrowest plugin, account or resource scope, query, and result size that meets your need.
 
 ## Where data goes
 
-Plugins communicate with their MCP client and the systems named in their documentation. Mailbridge uses local STDIO and macOS Automation and adds no application-level network destination. Connected applications may communicate with their providers.
+Plugins communicate with their MCP client and the systems named in their documentation. Mailbridge uses local STDIO and macOS Automation and adds no application-level network destination. Mail.app communicates with configured providers and, only in explicit send mode, the approved recipients of outgoing messages.
 
 Your MCP client or model provider may separately receive tool inputs and results according to that product's settings and privacy terms. Before using a cloud-hosted model, decide whether selected connected data may be sent to that provider.
 
