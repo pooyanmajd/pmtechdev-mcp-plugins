@@ -12,6 +12,7 @@ async function main(): Promise<void> {
     maxBodyChars: config.maxBodyChars,
     maxResults: config.maxResults,
     timeoutMs: config.timeoutMs,
+    searchBudgetMs: config.searchBudgetMs,
   });
   const server = createMailbridgeServer(bridge, config);
   await server.connect(new StdioServerTransport());

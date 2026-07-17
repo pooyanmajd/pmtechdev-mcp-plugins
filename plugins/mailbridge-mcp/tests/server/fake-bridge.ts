@@ -9,7 +9,13 @@ export function createFakeBridge(): {
   const spies = {
     listAccounts: vi.fn().mockResolvedValue([]),
     listMailboxes: vi.fn().mockResolvedValue([]),
-    searchMessages: vi.fn().mockResolvedValue({ messages: [], scannedCount: 0, incomplete: false }),
+    searchMessages: vi.fn().mockResolvedValue({
+      messages: [],
+      scannedCount: 0,
+      incomplete: false,
+      stopReasons: [],
+      coverage: { mailboxesSelected: 1, mailboxesCompleted: 1, strategy: "indexed" },
+    }),
     getMessage: vi.fn().mockResolvedValue({}),
     getMessages: vi.fn().mockResolvedValue([]),
     getAttachment: vi.fn().mockResolvedValue({}),

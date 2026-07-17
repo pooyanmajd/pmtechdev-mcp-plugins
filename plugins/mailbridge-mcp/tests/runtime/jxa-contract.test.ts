@@ -171,6 +171,132 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
+  it("uses a Mail-native prefilter for normalized exact subjects and rechecks candidates", () => {
+    const message = {
+      id: "message-1",
+      subject: "retirement statement — test person — ref123456-001",
+      sender: "alerts@example.com",
+      dateReceived: new Date("2026-07-16T08:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    };
+    const predicates: unknown[] = [];
+    const originalMessages = Object.assign(() => undefined, {
+      whose(predicate: unknown) {
+        predicates.push(predicate);
+        return [message];
+      },
+    });
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages: originalMessages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(request("searchMessages", {
+      subject: "Retirement Statement - TEST PERSON - REF123456-001",
+      subjectMatch: "exact",
+      limit: 5,
+    }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1" }],
+        scannedCount: 1,
+        incomplete: false,
+        stopReasons: [],
+        coverage: { strategy: "native_exact_subject" },
+      },
+    });
+    expect(predicates).toEqual([{ subject: { _contains: "123456" } }]);
+  });
+
+  it("uses indexed exact-subject search when no case-invariant native token exists", () => {
+    const message = {
+      id: "message-1",
+      subject: "iPhone launch briefing",
+      sender: "alerts@example.com",
+      dateReceived: new Date("2026-07-16T08:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    };
+    let nativeCalls = 0;
+    const originalMessages = new Proxy(
+      Object.assign(() => undefined, {
+        whose: () => {
+          nativeCalls += 1;
+          return [];
+        },
+      }),
+      {
+        get(target, property, receiver) {
+          if (property === "0") return message;
+          if (property === "1") return undefined;
+          return Reflect.get(target, property, receiver) as unknown;
+        },
+      },
+    );
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages: originalMessages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(request("searchMessages", {
+      subject: "IPHONE LAUNCH BRIEFING",
+      subjectMatch: "exact",
+      limit: 5,
+    }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1" }],
+        scannedCount: 1,
+        incomplete: false,
+        coverage: { strategy: "indexed" },
+      },
+    });
+    expect(nativeCalls).toBe(0);
+  });
+
+  it("falls back to indexed access when Mail rejects the native exact-subject prefilter", () => {
+    const message = {
+      id: "message-1",
+      subject: "Known exact subject",
+      sender: "alerts@example.com",
+      dateReceived: new Date("2026-07-16T08:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    };
+    const rejected = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === "0") throw new Error("native predicate unavailable");
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const originalMessages = new Proxy(
+      Object.assign(() => undefined, { whose: () => rejected }),
+      {
+        get(target, property, receiver) {
+          if (property === "0") return message;
+          if (property === "1") return undefined;
+          return Reflect.get(target, property, receiver) as unknown;
+        },
+      },
+    );
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages: originalMessages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(request("searchMessages", {
+      subject: "Known exact subject",
+      subjectMatch: "exact",
+      limit: 5,
+    }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1" }],
+        scannedCount: 1,
+        incomplete: false,
+        coverage: { strategy: "indexed" },
+      },
+    });
+  });
+
   it("merges newest Inbox streams without scanning every message", () => {
     function message(id: string, date: string): Record<string, unknown> {
       return {
@@ -279,6 +405,185 @@ describe("fixed JXA dispatcher contract", () => {
         messages: [{ messageKey: "message-1" }],
         scannedCount: 1,
         incomplete: true,
+      },
+    });
+  });
+
+  it("scans above the cursor mailbox cap and reports that continuation is unavailable", () => {
+    const mailboxes = Array.from({ length: 257 }, (_, index) => ({
+      name: `Mailbox ${index}`,
+      mailboxes: () => [],
+      messages: [{
+        id: `message-${index}`,
+        subject: `message-${index}`,
+        sender: "sender@example.com",
+        dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+        readStatus: true,
+        flaggedStatus: false,
+      }],
+    }));
+    const runtime = harness([account("account-1", ["person@example.com"], mailboxes)]);
+    runInContext(
+      "Date.now = (function () { var now = 0; return function () { now += 6001; return now; }; })();",
+      runtime.context,
+    );
+    runtime.request(request("searchMessages", { scope: "all", query: "not-present", limit: 5 }));
+
+    const response = JSON.parse(runtime.context.run([])) as {
+      result: Record<string, unknown>;
+    };
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        messages: [],
+        scannedCount: 1,
+        incomplete: true,
+        stopReasons: ["time_budget", "cursor_limit"],
+        coverage: { mailboxesSelected: 257, mailboxesCompleted: 0 },
+      },
+    });
+    expect(response.result).not.toHaveProperty("nextCursor");
+
+    runtime.request(request("searchMessages", {
+      scope: "all",
+      query: "not-present",
+      limit: 5,
+      cursor: { scans: [] },
+    }));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [],
+        scannedCount: 0,
+        incomplete: true,
+        stopReasons: ["mailbox_limit"],
+        coverage: { mailboxesSelected: 257, mailboxesCompleted: 0 },
+      },
+    });
+  });
+
+  it("returns a cursor on timeout and resumes after the last stable scan position", () => {
+    const messages = ["message-1", "message-2", "message-3"].map((id) => ({
+      id,
+      subject: id,
+      sender: "sender@example.com",
+      messageId: `${id}@example.com`,
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    }));
+    const runtime = harness([
+      account("account-1", ["person@example.com"], [{ name: "Inbox", mailboxes: () => [], messages }]),
+    ]);
+    runInContext(
+      "Date.now = (function () { var now = 0; return function () { now += 6001; return now; }; })();",
+      runtime.context,
+    );
+    runtime.request(request("searchMessages", { query: "not-present", scope: "inbox", limit: 5 }));
+
+    const first = JSON.parse(runtime.context.run([])) as {
+      result: { nextCursor: unknown; scannedCount: number; stopReasons: string[] };
+    };
+    expect(first.result).toMatchObject({
+      scannedCount: 1,
+      stopReasons: ["time_budget"],
+      nextCursor: { scans: [{ index: 1, anchorMessageKey: "message-1" }] },
+    });
+
+    runInContext("Date.now = function () { return 0; };", runtime.context);
+    runtime.request(request("searchMessages", {
+      query: "not-present",
+      scope: "inbox",
+      limit: 5,
+      cursor: first.result.nextCursor,
+    }));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [],
+        scannedCount: 2,
+        incomplete: false,
+        stopReasons: [],
+        coverage: { mailboxesSelected: 1, mailboxesCompleted: 1 },
+      },
+    });
+  });
+
+  it("fails a continuation honestly when the mailbox shifted before resume", () => {
+    const messages = ["message-1", "message-2"].map((id) => ({
+      id,
+      subject: id,
+      sender: "sender@example.com",
+      messageId: `${id}@example.com`,
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    }));
+    const runtime = harness([
+      account("account-1", ["person@example.com"], [{ name: "Inbox", mailboxes: () => [], messages }]),
+    ]);
+    runInContext(
+      "Date.now = (function () { var now = 0; return function () { now += 6001; return now; }; })();",
+      runtime.context,
+    );
+    runtime.request(request("searchMessages", { query: "not-present", limit: 5 }));
+    const first = JSON.parse(runtime.context.run([])) as { result: { nextCursor: unknown } };
+    messages.unshift({
+      id: "new-message",
+      subject: "new-message",
+      sender: "sender@example.com",
+      messageId: "new-message@example.com",
+      dateReceived: new Date("2026-07-17T11:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    });
+
+    runInContext("Date.now = function () { return 0; };", runtime.context);
+    runtime.request(request("searchMessages", {
+      query: "not-present",
+      limit: 5,
+      cursor: first.result.nextCursor,
+    }));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [],
+        scannedCount: 0,
+        incomplete: true,
+        stopReasons: ["cursor_invalidated"],
+      },
+    });
+  });
+
+  it("does not treat one out-of-order old timestamp as the end of date coverage", () => {
+    const messages = [
+      { id: "recent", dateReceived: new Date("2026-07-10T10:00:00.000Z") },
+      { id: "too-old", dateReceived: new Date("2025-12-31T10:00:00.000Z") },
+      { id: "late-recent", dateReceived: new Date("2026-07-05T10:00:00.000Z") },
+    ].map((message) => ({
+      ...message,
+      subject: message.id,
+      sender: "sender@example.com",
+      messageId: `${message.id}@example.com`,
+      readStatus: true,
+      flaggedStatus: false,
+    }));
+    const runtime = harness([
+      account("account-1", ["person@example.com"], [{ name: "Inbox", mailboxes: () => [], messages }]),
+    ]);
+    runtime.request(request("searchMessages", {
+      query: "late-recent",
+      dateFrom: "2026-01-01T00:00:00.000Z",
+      limit: 5,
+    }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "late-recent" }],
+        scannedCount: 3,
+        incomplete: false,
+        coverage: { mailboxesCompleted: 1 },
       },
     });
   });

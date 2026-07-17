@@ -57,7 +57,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_search_messages",
     title: "Search Mail Messages",
-    description: "Search newest-first, bounded Apple Mail message metadata, defaulting to Inbox across allowed accounts. The result reports when its fixed scan or time budget made coverage incomplete; narrow the account, mailbox, dates, or terms before relying on an incomplete result.",
+    description: "Search newest-first, bounded Apple Mail message metadata, defaulting to Inbox across allowed accounts. Prefer one account at a time when several are configured, use exact subject matching for a known complete subject, and pass nextCursor back unchanged to resume incomplete coverage. Results report stop reasons and mailbox coverage.",
     inputSchema: inputSchemas.mail_search_messages,
     annotations: READ_ANNOTATIONS,
   },

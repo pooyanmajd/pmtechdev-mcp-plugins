@@ -13,6 +13,7 @@ const config: MailbridgeConfig = {
   maxResults: 25,
   maxBodyChars: 100_000,
   timeoutMs: 20_000,
+  searchBudgetMs: 12_000,
 };
 
 describe("MCP server", () => {

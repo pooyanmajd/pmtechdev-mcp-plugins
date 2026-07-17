@@ -148,6 +148,7 @@ Environment variables are read when the server starts.
 | `MAILBRIDGE_MAX_RESULTS` | `25` by default; hard maximum `100` | Caps results returned by message searches. |
 | `MAILBRIDGE_MAX_BODY_CHARS` | `100000` by default; hard configuration maximum `500000` | Caps returned message body text. |
 | `MAILBRIDGE_TIMEOUT_MS` | `20000` by default; hard maximum `120000` | Caps each macOS automation subprocess in milliseconds. |
+| `MAILBRIDGE_SEARCH_BUDGET_MS` | `12000` by default; maximum `min(110000, MAILBRIDGE_TIMEOUT_MS - 20% margin)` | Caps work inside one message search. Raising `MAILBRIDGE_TIMEOUT_MS` alone does not raise this independent search budget. |
 
 Keep secrets out of these variables. Mailbridge never needs an email password, app password, access token, or provider API key.
 
@@ -177,7 +178,7 @@ Do not put passwords or provider tokens in either value. Before every send call,
 | --- | --- | --- |
 | `mail_list_accounts` | List allowed Mail accounts and their opaque IDs. | Read-only |
 | `mail_list_mailboxes` | List mailboxes for a selected account. | Read-only |
-| `mail_search_messages` | Return bounded message metadata plus scan count and an explicit `incomplete` flag. | Read-only |
+| `mail_search_messages` | Return bounded message metadata, exact/contains subject modes, scan count, coverage and stop diagnostics, plus a continuation cursor when an incomplete scan can resume safely. | Read-only |
 | `mail_get_message` | Return one selected message, including bounded body content. | Read-only |
 | `mail_get_messages` | Return a bounded batch of selected messages with per-message body caps. | Read-only |
 | `mail_get_attachment` | Return one selected attachment as bounded base64 content (up to 2 MiB). | Read-only |
@@ -198,7 +199,7 @@ Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start b
 
 1. Call `mail_list_accounts` and select the entry whose address is `personal@example.com`.
 2. Call `mail_search_messages` with that opaque account ID, `scope: "inbox"`, an unread filter, and a small result limit.
-3. Show the returned metadata. If `incomplete=true`, narrow the mailbox, dates, or terms before claiming no match exists.
+3. Show the returned metadata. If `incomplete=true` and `nextCursor` is present, repeat the same account-scoped search with that cursor unchanged. Otherwise use `stopReasons` and `coverage` to narrow safely before claiming no match exists.
 4. Call `mail_get_message` for one selected result, or `mail_get_messages` once when the user explicitly asks to read several shortlisted results.
 
 **Read the latest three messages across accounts**
@@ -257,6 +258,8 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
 | `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, or `send` mode after reviewing the exact authority needed. |
 | `TIMEOUT` | Narrow the mailbox, date range, query, or result limit before retrying. |
+| Search returns `incomplete: true` | Inspect `stopReasons` and `coverage`. Resume with `nextCursor` and identical filters when present; otherwise narrow to one account or mailbox. A partial result cannot prove absence. |
+| Search returns `cursor_invalidated` | Mailbox ordering changed after the prior page. Restart the same narrowed search once instead of altering or reconstructing the opaque cursor. |
 | `MUTATION_OUTCOME_UNKNOWN` | Inspect Mail.app before retrying; a timed-out mutation or send may have completed. Never retry a send blindly. |
 | `SEND_REJECTED` | Mail.app confirmed it did not accept the message for sending. Review the account and content before a new attempt. |
 | `SEND_CONTENT_CHANGED` | Mail changed the constructed outgoing subject or body before submission. Review Mail settings and do not bypass the check. |
