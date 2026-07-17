@@ -1,0 +1,120 @@
+name: Release Mailbridge
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-mailbridge-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package, attest, and publish
+    runs-on: macos-14
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      MAILBRIDGE_MODE: read-only
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify signed annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_OBJECT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object | select(.type == "tag") | .sha')
+          if [ -z "$TAG_OBJECT_SHA" ]; then
+            echo "Release tags must be signed annotated tags."
+            exit 1
+          fi
+          VERIFIED=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT_SHA}" --jq '.verification.verified')
+          if [ "$VERIFIED" != "true" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT_SHA}" --jq '.verification | {verified, reason}'
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Verify release tag and versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module --eval '
+            import { readFileSync } from "node:fs";
+            const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+            const root = readJson("package.json");
+            const pkg = readJson("plugins/mailbridge-mcp/package.json");
+            const plugin = readJson("plugins/mailbridge-mcp/.codex-plugin/plugin.json");
+            const expectedTag = `v${pkg.version}`;
+            if (process.env.RELEASE_TAG !== expectedTag) throw new Error(`expected tag ${expectedTag}`);
+            if (root.version !== pkg.version || plugin.version !== pkg.version) throw new Error("release versions differ");
+          '
+
+      - name: Install locked workspace dependencies
+        run: npm ci
+
+      - name: Run workspace checks
+        run: npm run check
+
+      - name: Audit published dependency surface
+        run: npm audit --omit=dev
+
+      - name: Validate Mailbridge JXA and no-send boundary
+        run: |
+          node --check plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          test "$MAILBRIDGE_MODE" = "read-only"
+          ! grep -qE 'mail_send_draft|Mail\.send|sendDraft' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
+
+      - name: Verify committed plugin bundle
+        run: git diff --exit-code -- plugins/mailbridge-mcp/dist
+
+      - name: Build release artifacts
+        run: |
+          VERSION=$(node --print "require('./plugins/mailbridge-mcp/package.json').version")
+          mkdir -p release
+          npm pack --workspace mailbridge-mcp --pack-destination release
+          npm sbom --workspace mailbridge-mcp --sbom-format cyclonedx > "release/mailbridge-mcp-${VERSION}.build.cdx.json"
+          cd release
+          shasum -a 256 "mailbridge-mcp-${VERSION}.tgz" "mailbridge-mcp-${VERSION}.build.cdx.json" > SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: release/mailbridge-mcp-*.tgz
+
+      - name: Attest release SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: release/mailbridge-mcp-*.tgz
+          sbom-path: release/mailbridge-mcp-*.build.cdx.json
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node --print "require('./plugins/mailbridge-mcp/package.json').version")
+          gh release create "$GITHUB_REF_NAME" \
+            release/mailbridge-mcp-*.tgz \
+            release/mailbridge-mcp-*.build.cdx.json \
+            release/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --title "mailbridge-mcp@${VERSION}"

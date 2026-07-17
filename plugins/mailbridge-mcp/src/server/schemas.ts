@@ -6,6 +6,7 @@ const MAX_SUBJECT_CHARS = 998;
 const MAX_OUTGOING_BODY_CHARS = 200_000;
 const MAX_RECIPIENTS_PER_FIELD = 50;
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const MAX_MESSAGE_BATCH = 25;
 
 const opaqueId = z
   .string()
@@ -30,6 +31,7 @@ export const searchMessagesInputSchema = z
     query: z.string().trim().min(1).max(MAX_QUERY_CHARS).optional().describe("Plain-text term matched against message metadata."),
     accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts."),
     mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes."),
+    scope: z.enum(["inbox", "all"]).default("inbox").describe("Mailbox scope when mailboxId is omitted. Defaults to inbox across allowed accounts."),
     from: z.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
     to: z.string().trim().min(1).max(320).optional().describe("Recipient address or text to match."),
     subject: z.string().trim().min(1).max(MAX_SUBJECT_CHARS).optional().describe("Subject text to match."),
@@ -49,6 +51,13 @@ export const getMessageInputSchema = z
   .object({
     messageId: opaqueId.describe("Opaque message ID returned by mail_search_messages."),
     maxBodyChars: z.number().int().min(1).max(1_000_000).optional().describe("Requested body character cap; the server cap still applies."),
+  })
+  .strict();
+
+export const getMessagesInputSchema = z
+  .object({
+    messageIds: z.array(opaqueId).min(1).max(MAX_MESSAGE_BATCH).describe("Opaque message IDs returned by mail_search_messages."),
+    maxBodyChars: z.number().int().min(1).max(1_000_000).optional().describe("Requested per-message body character cap; the server cap still applies."),
   })
   .strict();
 
@@ -120,6 +129,7 @@ export const TOOL_NAMES = [
   "mail_list_mailboxes",
   "mail_search_messages",
   "mail_get_message",
+  "mail_get_messages",
   "mail_get_attachment",
   "mail_set_message_state",
   "mail_create_draft",
@@ -134,6 +144,7 @@ export const inputSchemas = {
   mail_list_mailboxes: listMailboxesInputSchema,
   mail_search_messages: searchMessagesInputSchema,
   mail_get_message: getMessageInputSchema,
+  mail_get_messages: getMessagesInputSchema,
   mail_get_attachment: getAttachmentInputSchema,
   mail_set_message_state: setMessageStateInputSchema,
   mail_create_draft: createDraftInputSchema,

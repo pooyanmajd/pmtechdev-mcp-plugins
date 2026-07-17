@@ -45,7 +45,7 @@ Mailbridge MCP is a macOS-only, local STDIO server. It exposes a fixed, bounded 
 6. Results are normalized into domain objects, capped, and returned with stable account and mailbox identity.
 7. Errors are mapped to stable public codes without raw scripts, environment values, stack traces, or credentials.
 
-Search returns bounded metadata without message bodies. Full message content is a separate `mail_get_message` request. Attachment retrieval is separate again. This progressive retrieval keeps sensitive data and prompt-injection exposure proportional to the user's task.
+Search returns bounded metadata without message bodies. Full message content is a separate `mail_get_message` request, or a bounded `mail_get_messages` request for an explicitly shortlisted batch. Attachment retrieval is separate again. This progressive retrieval keeps sensitive data and prompt-injection exposure proportional to the user's task.
 
 ## Trust boundaries
 
@@ -79,11 +79,14 @@ Mailboxes and messages can change between calls. Mailbridge favors explicit `NOT
 
 ## Resource controls
 
-- Search defaults are bounded and results can never exceed 100.
-- Search accesses message collections by index rather than eagerly materializing an entire mailbox. Supported metadata filters are pushed into Mail.app first and then rechecked by the bridge; Mail versions that reject a native predicate use the same bounded indexed fallback. Results include `scannedCount` and `incomplete`; incomplete searches must be narrowed before treating absence as conclusive.
+- Search defaults to Inbox, is bounded, and results can never exceed 100.
+- Mail exposes each mailbox newest-first. Search performs a k-way merge across selected Inbox streams, so a small latest page reads only the next candidate needed from each account instead of rescanning every mailbox.
+- Search accesses message collections by index rather than eagerly materializing an entire mailbox. An internal budget derived from the configured subprocess timeout returns partial results with `incomplete=true` before the outer deadline; incomplete searches must be narrowed before treating absence as conclusive.
+- All Mail.app automation is serialized with a bounded queue. This avoids concurrent Apple Event scans competing inside Mail.app; excess parallel work fails with `AUTOMATION_BUSY` instead of building an unbounded backlog.
 - Full bodies are capped by configured character count.
+- Batch body reads are capped to 25 selected messages and retain the per-message body limit.
 - Attachment metadata and serialized tool results are bounded.
-- Every automation process has a configured timeout.
+- Every automation process has a configured timeout, and search receives a smaller derived budget so it can return partial coverage first when Mail.app remains responsive between events.
 - The transport is STDIO and has no listening port.
 - Live Mail tests are opt-in; normal tests use a fake bridge.
 

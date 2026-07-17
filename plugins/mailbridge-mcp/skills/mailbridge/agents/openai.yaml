@@ -1,4 +1,4 @@
 interface:
   display_name: "Mailbridge"
   short_description: "Work safely with accounts in macOS Mail"
-  default_prompt: "Use $mailbridge to find unread messages in my selected Mail account."
+  default_prompt: "Use $mailbridge to find and read my three newest Inbox messages across configured Mail accounts."

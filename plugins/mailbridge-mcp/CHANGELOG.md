@@ -4,9 +4,18 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-17
+
+### Added
+
+- Bounded `mail_get_messages` batch reads for shortlisted messages.
+
 ### Changed
 
-- Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
+- Inbox-scoped search now defaults to a newest-first k-way merge across allowed accounts instead of rescanning complete mailboxes.
+- Search has an internal time budget derived from the configured subprocess timeout and reports partial coverage with `incomplete` before that outer deadline.
+- Mail automation is serialized with bounded backpressure so concurrent reads cannot overload Mail.app.
+- Runtime configuration now passes `maxResults` through to every bridge operation.
 
 ## [0.1.0] - 2026-07-16
 
@@ -21,5 +30,10 @@ All notable changes to this project will be documented here. The format is based
 - Codex plugin manifest, local MCP configuration, and safe-use Mailbridge skill.
 - Deterministic fake-bridge tests, macOS CI, public security/privacy policies, and original brand assets.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...HEAD
+### Changed
+
+- Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
+
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0

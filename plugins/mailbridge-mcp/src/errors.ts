@@ -26,7 +26,7 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   NOT_FOUND: "The requested Mail item was not found or is not accessible.",
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
-  AUTOMATION_BUSY: "Mailbridge has too many modifying operations queued. Wait before retrying.",
+  AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
   TIMEOUT: "Apple Mail did not complete the operation before the configured timeout.",
   MAIL_AUTOMATION_ERROR: "Apple Mail could not complete the requested operation.",

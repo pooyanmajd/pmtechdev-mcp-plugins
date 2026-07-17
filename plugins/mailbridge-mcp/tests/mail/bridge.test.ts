@@ -64,6 +64,7 @@ describe("AppleMailBridge", () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]?.emailAddresses).toEqual(["allowed@example.com"]);
     expect(runner.requests[0]?.policy.allowedAccounts).toEqual(["allowed@example.com"]);
+    expect(runner.requests[0]?.policy.searchTimeBudgetMs).toBe(80);
   });
 
   it("decodes public selectors before dispatch and maps raw nested message identities", async () => {
@@ -94,6 +95,7 @@ describe("AppleMailBridge", () => {
     expect(runner.requests[0]?.input).toMatchObject({
       account: ACCOUNT_LOCATOR,
       mailbox: MAILBOX_LOCATOR,
+      scope: "inbox",
       unread: true,
       limit: 10,
     });
@@ -164,6 +166,35 @@ describe("AppleMailBridge", () => {
     });
   });
 
+  it("batch-reads selected messages in one bounded automation request", async () => {
+    const runner = new FakeRunner();
+    const secondLocator = { ...MAILBOX_LOCATOR, messageKey: "message-8" };
+    const fullMessage = (locator: typeof MESSAGE_LOCATOR) => ({
+      ...locator,
+      subject: locator.messageKey,
+      sender: "sender@example.com",
+      read: true,
+      flagged: false,
+      body: "bounded body",
+      bodyTruncated: false,
+      originalBodyChars: 12,
+      headers: [],
+      recipients: { to: [], cc: [], bcc: [] },
+      attachments: [],
+    });
+    runner.enqueue([fullMessage(MESSAGE_LOCATOR), fullMessage(secondLocator)]);
+    const bridge = makeBridge(runner);
+    const ids = [MESSAGE_LOCATOR, secondLocator].map((locator) => encodeMailId("message", locator));
+
+    const result = await bridge.getMessages({ messageIds: ids, maxBodyChars: 500 });
+
+    expect(runner.requests[0]?.input).toEqual({
+      messages: [MESSAGE_LOCATOR, secondLocator],
+      maxBodyChars: 500,
+    });
+    expect(result.map(({ subject }) => subject)).toEqual(["message-7", "message-8"]);
+  });
+
   it("enforces result, body, attachment, and state bounds before automation", async () => {
     const runner = new FakeRunner();
     const bridge = makeBridge(runner);
@@ -174,6 +205,7 @@ describe("AppleMailBridge", () => {
     await expect(bridge.getMessage({ messageId, maxBodyChars: 1_001 })).rejects.toMatchObject({
       code: "INVALID_REQUEST",
     });
+    await expect(bridge.getMessages({ messageIds: [] })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     await expect(bridge.getAttachment({ attachmentId, maxBytes: 1_025 })).rejects.toMatchObject({
       code: "INVALID_REQUEST",
     });

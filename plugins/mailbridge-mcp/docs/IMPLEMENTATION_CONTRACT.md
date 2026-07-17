@@ -14,6 +14,7 @@ Read tools:
 - `mail_list_mailboxes`
 - `mail_search_messages`
 - `mail_get_message`
+- `mail_get_messages`
 - `mail_get_attachment`
 
 Write tools:
@@ -23,14 +24,14 @@ Write tools:
 - `mail_create_reply_draft`
 - `mail_create_forward_draft`
 
-Explicitly out of scope for v0.1.0: sending, permanent deletion, mailbox/rule CRUD, direct database access, arbitrary AppleScript execution, background monitoring, remote MCP hosting, and credential management.
+Explicitly out of scope for v0.1: sending, permanent deletion, mailbox/rule CRUD, direct database access, arbitrary AppleScript execution, background monitoring, remote MCP hosting, and credential management.
 
 ## Data and identity
 
 - Account IDs and mailbox IDs are opaque stable strings returned by the bridge; callers must not invent them.
 - Message IDs are opaque bridge IDs plus the RFC Message-ID when available.
 - Every message result includes its account and mailbox identity.
-- Search returns bounded message metadata plus `scannedCount` and `incomplete`. Full body access requires `mail_get_message`, and an incomplete search must be narrowed before absence is treated as conclusive.
+- Search defaults to newest-first Inbox scope and returns bounded message metadata plus `scannedCount` and `incomplete`. Full body access requires `mail_get_message` or bounded `mail_get_messages`, and an incomplete search must be narrowed before absence is treated as conclusive.
 
 ## Runtime architecture
 

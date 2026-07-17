@@ -8,7 +8,7 @@ import { TOOL_DEFINITIONS } from "./tool-definitions.js";
 
 export const SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.1.0",
+  version: "0.1.1",
 });
 
 export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeConfig): McpServer {

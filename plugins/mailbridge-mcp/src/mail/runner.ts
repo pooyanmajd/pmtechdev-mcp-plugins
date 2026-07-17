@@ -11,6 +11,7 @@ export const AUTOMATION_OPERATIONS = [
   "listMailboxes",
   "searchMessages",
   "getMessage",
+  "getMessages",
   "getAttachment",
   "setMessageState",
   "createDraft",
@@ -28,6 +29,7 @@ export interface AutomationRequest {
     maxBodyChars: number;
     maxAttachmentBytes: number;
     maxResults: number;
+    searchTimeBudgetMs: number;
     attachmentDirectory?: string;
   };
 }

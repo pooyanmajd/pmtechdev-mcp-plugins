@@ -1,6 +1,6 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local, safety-first MCP server for Apple Mail on macOS",
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp#readme",
   "repository": {

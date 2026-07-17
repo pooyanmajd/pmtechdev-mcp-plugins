@@ -46,12 +46,17 @@ describe("MailbridgeToolService", () => {
 
     await service.invoke("mail_search_messages", { limit: 100 });
     await service.invoke("mail_get_message", { messageId: "message:1", maxBodyChars: 50_000 });
+    await service.invoke("mail_get_messages", { messageIds: ["message:1", "message:2"], maxBodyChars: 50_000 });
     await service.invoke("mail_get_attachment", { attachmentId: "attachment:1", maxBytes: 1024 });
 
     expect(spies.searchMessages).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 10, unread: false, flagged: false }),
+      expect.objectContaining({ limit: 10, scope: "inbox", unread: false, flagged: false }),
     );
     expect(spies.getMessage).toHaveBeenCalledWith({ messageId: "message:1", maxBodyChars: 1_000 });
+    expect(spies.getMessages).toHaveBeenCalledWith({
+      messageIds: ["message:1", "message:2"],
+      maxBodyChars: 1_000,
+    });
     expect(spies.getAttachment).toHaveBeenCalledWith({ attachmentId: "attachment:1", maxBytes: 1_024 });
   });
 
@@ -142,9 +147,37 @@ describe("MailbridgeToolService", () => {
     });
   });
 
+  it("serializes all Mail automation and rejects excess concurrent work", async () => {
+    const queued = createFakeBridge();
+    let releaseFirst = (): void => undefined;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    queued.spies.listAccounts.mockReturnValueOnce(firstPending.then(() => []));
+    const service = new MailbridgeToolService(queued.bridge, config());
+
+    const first = service.invoke("mail_list_accounts", {});
+    const second = service.invoke("mail_search_messages", { limit: 1 });
+    await vi.waitFor(() => {
+      expect(queued.spies.listAccounts).toHaveBeenCalledOnce();
+    });
+    expect(queued.spies.searchMessages).not.toHaveBeenCalled();
+
+    const rejected = await service.invoke("mail_list_mailboxes", { includeNested: false });
+    expect(parsedResult(rejected)).toMatchObject({
+      ok: false,
+      error: { code: "AUTOMATION_BUSY" },
+    });
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(queued.spies.searchMessages).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["mail_search_messages", { limit: 101 }],
     ["mail_get_message", { messageId: "" }],
+    ["mail_get_messages", { messageIds: [] }],
     ["mail_get_attachment", { attachmentId: "id", maxBytes: 6 * 1024 * 1024 }],
     ["mail_set_message_state", { messageId: "id" }],
     ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["not-an-email"] }],

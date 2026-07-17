@@ -35,6 +35,20 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 4. Disambiguate from returned metadata.
 5. Call `mail_get_message` exactly once for the selected opaque message ID and return capped body content.
 
+### P2b — Read the newest three messages across account Inboxes
+
+**Given:** at least two allowed accounts with interleaved received dates.
+
+**Request:** “Find and read my last three emails.”
+
+**Expected:**
+
+1. Call `mail_search_messages` with `scope: "inbox"` and `limit: 3`.
+2. The runtime merges newest-first Inbox streams and does not scan complete mailboxes.
+3. Results are globally newest-first and report `incomplete: false` when the page is complete.
+4. Call `mail_get_messages` once with exactly the three returned opaque IDs.
+5. No message-state or draft tool is called.
+
 ### P3 — Retrieve a selected attachment
 
 **Given:** a selected message with one small fixture attachment.

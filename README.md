@@ -34,14 +34,23 @@ pmtechdev-mcp-plugins/
 
 ## Install from the PMTechDev marketplace
 
-After this repository is published, add it as a Codex marketplace and install a plugin:
+Install the current marketplace snapshot:
 
 ```bash
 codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
+For a reviewed, immutable version, pin the marketplace to the Mailbridge `0.1.0` release tag instead:
+
+```bash
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.1.0
+codex plugin add mailbridge-mcp@pmtechdev
+```
+
 Start a new Codex task after installing or updating a plugin so its skills and MCP tools are loaded.
+
+Only install Mailbridge in a trusted Codex or MCP host: the launching host receives macOS Automation authority for Mail. The marketplace configuration is read-only by default, but selected mail and tool results may still be sent to the model provider configured in that host. Review the [Mailbridge install and privacy guidance](plugins/mailbridge-mcp/README.md#install-as-a-codex-plugin) before connecting sensitive accounts.
 
 ## Develop the workspace
 
@@ -85,6 +94,6 @@ Add only broadly reusable, well-tested infrastructure to the kit. Integration-sp
 - Mutations require explicit tools, clear annotations, deterministic tests, and safe retry semantics.
 - Each plugin remains independently packageable and owns its runtime-specific documentation.
 
-See [Contributing](CONTRIBUTING.md), [Support](SUPPORT.md), [Security](SECURITY.md), [Privacy](PRIVACY.md), and [Terms](TERMS.md). The workspace and bundled plugins are available under the [MIT License](LICENSE).
+See [Contributing](CONTRIBUTING.md), [Releasing](RELEASING.md), [Support](SUPPORT.md), [Security](SECURITY.md), [Privacy](PRIVACY.md), and [Terms](TERMS.md). The workspace and bundled plugins are available under the [MIT License](LICENSE).
 
 Copyright © 2026 PMTechDev / Pooyan Majd.

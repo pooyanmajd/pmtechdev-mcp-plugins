@@ -71,6 +71,7 @@ function request(operation: string, input: Record<string, unknown> = {}, allowed
       maxBodyChars: 1_000,
       maxAttachmentBytes: 1_024,
       maxResults: 25,
+      searchTimeBudgetMs: 12_000,
     },
   };
 }
@@ -123,7 +124,7 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
-  it("pushes supported metadata filters into Mail before scanning messages", () => {
+  it("applies metadata filters during a bounded indexed scan", () => {
     const message = {
       id: "message-1",
       subject: "Barclays account update",
@@ -133,19 +134,12 @@ describe("fixed JXA dispatcher contract", () => {
       readStatus: false,
       flaggedStatus: true,
     };
-    const filteredMessages = new Proxy(() => undefined, {
+    const messages = new Proxy(() => undefined, {
       get(target, property, receiver) {
         if (property === "0") return message;
         if (property === "1") return undefined;
         if (property === "id") throw new Error("eager identity enumeration is forbidden");
         return Reflect.get(target, property, receiver) as unknown;
-      },
-    });
-    const predicates: unknown[] = [];
-    const messages = Object.assign(() => undefined, {
-      whose(predicate: unknown) {
-        predicates.push(predicate);
-        return filteredMessages;
       },
     });
     const mailbox = { name: "Inbox", mailboxes: () => [], messages };
@@ -172,63 +166,116 @@ describe("fixed JXA dispatcher contract", () => {
         incomplete: false,
       },
     });
-    expect(predicates).toHaveLength(1);
-    expect(JSON.stringify(predicates[0])).toContain("readStatus");
-    expect(JSON.stringify(predicates[0])).toContain("flaggedStatus");
-    expect(JSON.stringify(predicates[0])).toContain("sender");
-    expect(JSON.stringify(predicates[0])).toContain("subject");
-    expect(JSON.stringify(predicates[0])).toContain("_contains");
-    expect(JSON.stringify(predicates[0])).toContain("dateReceived");
-    expect(JSON.stringify(predicates[0])).toContain("_greaterThan");
-    expect(JSON.stringify(predicates[0])).toContain("_lessThan");
   });
 
-  it("falls back to the bounded indexed scan when Mail rejects a native predicate", () => {
-    const message = {
-      id: "message-1",
-      subject: "Account update",
-      sender: "alerts@example.com",
-      messageId: "rfc@example.com",
-      readStatus: false,
-      flaggedStatus: false,
+  it("merges newest Inbox streams without scanning every message", () => {
+    function message(id: string, date: string): Record<string, unknown> {
+      return {
+        id,
+        subject: id,
+        sender: "sender@example.com",
+        dateReceived: new Date(date),
+        readStatus: true,
+        flaggedStatus: false,
+      };
+    }
+    const personalInbox = {
+      name: "INBOX",
+      mailboxes: () => [],
+      messages: [
+        message("personal-10", "2026-07-17T10:00:00.000Z"),
+        message("personal-08", "2026-07-17T08:00:00.000Z"),
+        message("personal-06", "2026-07-17T06:00:00.000Z"),
+      ],
     };
-    const rejectedNativeCollection = new Proxy(() => undefined, {
-      get(target, property, receiver) {
-        if (property === "0") throw new Error("predicate unsupported");
-        return Reflect.get(target, property, receiver) as unknown;
-      },
-    });
-    const messages = new Proxy(
-      Object.assign(() => undefined, {
-        whose() {
-          return rejectedNativeCollection;
-        },
-      }),
-      {
-        get(target, property, receiver) {
-          if (property === "0") return message;
-          if (property === "1") return undefined;
-          return Reflect.get(target, property, receiver) as unknown;
-        },
-      },
-    );
-    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
-    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
-    runtime.request(
-      request("searchMessages", {
-        mailbox: { accountKey: "account-1", path: ["Inbox"] },
-        subject: "account",
-        unread: true,
-        limit: 5,
-      }),
-    );
+    const workInbox = {
+      name: "Inbox",
+      mailboxes: () => [],
+      messages: [
+        message("work-09", "2026-07-17T09:00:00.000Z"),
+        message("work-07", "2026-07-17T07:00:00.000Z"),
+        message("work-05", "2026-07-17T05:00:00.000Z"),
+      ],
+    };
+    const runtime = harness([
+      account("personal", ["personal@example.com"], [personalInbox]),
+      account("work", ["work@example.com"], [workInbox]),
+    ]);
+    runtime.request(request("searchMessages", { scope: "inbox", limit: 3 }));
 
     expect(JSON.parse(runtime.context.run([]))).toMatchObject({
       ok: true,
       result: {
-        messages: [{ messageKey: "message-1", subject: "Account update" }],
-        scannedCount: 1,
+        messages: [
+          { accountKey: "personal", messageKey: "personal-10" },
+          { accountKey: "work", messageKey: "work-09" },
+          { accountKey: "personal", messageKey: "personal-08" },
+        ],
+        scannedCount: 4,
         incomplete: false,
+      },
+    });
+  });
+
+  it("returns the latest Inbox message after reading one candidate per account", () => {
+    function message(id: string, date: string): Record<string, unknown> {
+      return {
+        id,
+        subject: id,
+        sender: "sender@example.com",
+        dateReceived: new Date(date),
+        readStatus: true,
+        flaggedStatus: false,
+      };
+    }
+    const runtime = harness([
+      account("personal", ["personal@example.com"], [{
+        name: "INBOX",
+        mailboxes: () => [],
+        messages: [message("personal-latest", "2026-07-17T10:00:00.000Z"), message("personal-old", "2026-07-16T10:00:00.000Z")],
+      }]),
+      account("work", ["work@example.com"], [{
+        name: "Inbox",
+        mailboxes: () => [],
+        messages: [message("work-latest", "2026-07-17T09:00:00.000Z"), message("work-old", "2026-07-16T09:00:00.000Z")],
+      }]),
+    ]);
+    runtime.request(request("searchMessages", { scope: "inbox", limit: 1 }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ accountKey: "personal", messageKey: "personal-latest" }],
+        scannedCount: 2,
+        incomplete: false,
+      },
+    });
+  });
+
+  it("returns partial coverage when the internal search time budget expires", () => {
+    const messages = ["message-1", "message-2"].map((id) => ({
+      id,
+      subject: id,
+      sender: "sender@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    }));
+    const runtime = harness([
+      account("account-1", ["person@example.com"], [{ name: "Inbox", mailboxes: () => [], messages }]),
+    ]);
+    runInContext(
+      "Date.now = (function () { var now = 0; return function () { now += 6001; return now; }; })();",
+      runtime.context,
+    );
+    runtime.request(request("searchMessages", { scope: "inbox", limit: 5 }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        messages: [{ messageKey: "message-1" }],
+        scannedCount: 1,
+        incomplete: true,
       },
     });
   });
@@ -281,6 +328,42 @@ describe("fixed JXA dispatcher contract", () => {
     expect(JSON.parse(runtime.context.run([]))).toMatchObject({
       ok: false,
       error: { code: "MAIL_AUTOMATION_ERROR" },
+    });
+  });
+
+  it("batch-reads selected message bodies in one dispatcher operation", () => {
+    const messages = ["message-1", "message-2"].map((id) => ({
+      id,
+      subject: id,
+      sender: "sender@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+      content: `${id} body`,
+      headers: [],
+      toRecipients: [],
+      ccRecipients: [],
+      bccRecipients: [],
+      mailAttachments: [],
+    }));
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(
+      request("getMessages", {
+        messages: [
+          { accountKey: "account-1", path: ["Inbox"], messageKey: "message-1" },
+          { accountKey: "account-1", path: ["Inbox"], messageKey: "message-2" },
+        ],
+        maxBodyChars: 100,
+      }),
+    );
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: [
+        { messageKey: "message-1", body: "message-1 body" },
+        { messageKey: "message-2", body: "message-2 body" },
+      ],
     });
   });
 
