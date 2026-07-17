@@ -4,6 +4,8 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-17
+
 ### Added
 
 - `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` tools, and a local, per-user access-preferences file (`~/Library/Application Support/mailbridge-mcp/preferences.json` by default) so a user's chosen mode and account allowlist can be saved once and reused across sessions without editing any shared or git-tracked configuration file. An explicitly set environment variable always takes precedence over a saved value. Both tools are available in every mode, including `read-only`.
@@ -113,7 +115,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...v0.2.1

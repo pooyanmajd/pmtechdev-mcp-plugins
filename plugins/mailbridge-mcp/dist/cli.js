@@ -32739,7 +32739,7 @@ var TOOL_DEFINITIONS = [
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.3.0"
+  version: "0.4.0"
 });
 function displayJson(value) {
   return JSON.stringify(value).replace(
