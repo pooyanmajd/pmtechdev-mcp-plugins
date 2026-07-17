@@ -11,6 +11,7 @@ export function createFakeBridge(): {
     listMailboxes: vi.fn().mockResolvedValue([]),
     searchMessages: vi.fn().mockResolvedValue({ messages: [], scannedCount: 0, incomplete: false }),
     getMessage: vi.fn().mockResolvedValue({}),
+    getMessages: vi.fn().mockResolvedValue([]),
     getAttachment: vi.fn().mockResolvedValue({}),
     setMessageState: vi.fn().mockResolvedValue({}),
     createDraft: vi.fn().mockResolvedValue({}),

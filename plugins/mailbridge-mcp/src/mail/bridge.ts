@@ -104,6 +104,7 @@ export interface ListMailboxesInput {
 export interface SearchMessagesInput {
   accountId?: string;
   mailboxId?: string;
+  scope?: "inbox" | "all";
   query?: string;
   from?: string;
   to?: string;
@@ -117,6 +118,11 @@ export interface SearchMessagesInput {
 
 export interface GetMessageInput {
   messageId: string;
+  maxBodyChars?: number;
+}
+
+export interface GetMessagesInput {
+  messageIds: string[];
   maxBodyChars?: number;
 }
 
@@ -170,6 +176,7 @@ export interface MailBridge {
   listMailboxes(input?: ListMailboxesInput): Promise<Mailbox[]>;
   searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult>;
   getMessage(input: GetMessageInput): Promise<FullMessage>;
+  getMessages(input: GetMessagesInput): Promise<FullMessage[]>;
   getAttachment(input: GetAttachmentInput): Promise<AttachmentContent>;
   setMessageState(input: SetMessageStateInput): Promise<MessageSummary>;
   createDraft(input: CreateDraftInput): Promise<DraftResult>;
@@ -246,6 +253,8 @@ interface RawDraftResult extends DraftLocator {
 const HARD_MAX_RESULTS = 100;
 const HARD_MAX_BODY_CHARS = 1_000_000;
 const HARD_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const HARD_MAX_TIMEOUT_MS = 120_000;
+const MAX_SEARCH_TIME_BUDGET_MS = 12_000;
 
 function boundedInteger(
   value: number,
@@ -260,6 +269,11 @@ function boundedInteger(
     );
   }
   return value;
+}
+
+function searchTimeBudget(timeoutMs: number): number {
+  const margin = Math.max(1, Math.floor(timeoutMs / 5));
+  return Math.max(1, Math.min(MAX_SEARCH_TIME_BUDGET_MS, timeoutMs - margin));
 }
 
 function optionalText(value: string | undefined, name: string, maximum = 4_096): string | undefined {
@@ -372,6 +386,8 @@ export class AppleMailBridge implements MailBridge {
   readonly maxBodyChars: number;
   readonly maxResults: number;
   readonly maxAttachmentBytes: number;
+  readonly timeoutMs: number;
+  readonly searchTimeBudgetMs: number;
   readonly runner: AutomationRunner;
 
   constructor(options: AppleMailBridgeOptions) {
@@ -384,7 +400,9 @@ export class AppleMailBridge implements MailBridge {
       1,
       HARD_MAX_ATTACHMENT_BYTES,
     );
-    this.runner = options.runner ?? new OsascriptAutomationRunner({ timeoutMs: options.timeoutMs });
+    this.timeoutMs = boundedInteger(options.timeoutMs, "timeoutMs", 1, HARD_MAX_TIMEOUT_MS);
+    this.searchTimeBudgetMs = searchTimeBudget(this.timeoutMs);
+    this.runner = options.runner ?? new OsascriptAutomationRunner({ timeoutMs: this.timeoutMs });
   }
 
   private request<T>(operation: AutomationRequest["operation"], input: Record<string, unknown>): Promise<T> {
@@ -396,6 +414,7 @@ export class AppleMailBridge implements MailBridge {
         maxBodyChars: this.maxBodyChars,
         maxAttachmentBytes: this.maxAttachmentBytes,
         maxResults: this.maxResults,
+        searchTimeBudgetMs: this.searchTimeBudgetMs,
       },
     });
   }
@@ -436,6 +455,7 @@ export class AppleMailBridge implements MailBridge {
     const raw = await this.request<RawSearchMessagesResult>("searchMessages", {
       ...(account ? { account } : {}),
       ...(mailbox ? { mailbox } : {}),
+      scope: input.scope ?? "inbox",
       query: optionalText(input.query, "query"),
       from: optionalText(input.from, "from", 320),
       to: optionalText(input.to, "to", 320),
@@ -472,6 +492,34 @@ export class AppleMailBridge implements MailBridge {
       recipients: raw.recipients,
       attachments: raw.attachments.map(mapAttachment),
     };
+  }
+
+  async getMessages(input: GetMessagesInput): Promise<FullMessage[]> {
+    const limit = Math.min(25, this.maxResults);
+    if (input.messageIds.length === 0 || input.messageIds.length > limit) {
+      throw new MailBridgeError("INVALID_REQUEST", `messageIds must contain between 1 and ${limit} entries.`);
+    }
+    const locators = input.messageIds.map((messageId) => decodeMailId("message", messageId));
+    const maxBodyChars = boundedInteger(
+      input.maxBodyChars ?? this.maxBodyChars,
+      "maxBodyChars",
+      1,
+      this.maxBodyChars,
+    );
+    const raw = await this.request<RawFullMessage[]>("getMessages", {
+      messages: locators,
+      maxBodyChars,
+    });
+    return raw.map((message) => ({
+      ...mapMessage(message),
+      body: message.body,
+      bodyTruncated: message.bodyTruncated,
+      originalBodyChars: message.originalBodyChars,
+      ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+      headers: message.headers,
+      recipients: message.recipients,
+      attachments: message.attachments.map(mapAttachment),
+    }));
   }
 
   async getAttachment(input: GetAttachmentInput): Promise<AttachmentContent> {
@@ -583,10 +631,6 @@ export class AppleMailBridge implements MailBridge {
   }
 }
 
-export function createMailBridge(options: {
-  allowedAccounts?: string[];
-  maxBodyChars: number;
-  timeoutMs: number;
-}): MailBridge {
+export function createMailBridge(options: AppleMailBridgeOptions): MailBridge {
   return new AppleMailBridge(options);
 }

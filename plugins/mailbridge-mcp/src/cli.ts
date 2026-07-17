@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   const bridge = createMailBridge({
     ...(config.allowedAccounts === undefined ? {} : { allowedAccounts: [...config.allowedAccounts] }),
     maxBodyChars: config.maxBodyChars,
+    maxResults: config.maxResults,
     timeoutMs: config.timeoutMs,
   });
   const server = createMailbridgeServer(bridge, config);

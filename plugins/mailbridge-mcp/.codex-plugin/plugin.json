@@ -1,6 +1,6 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Safely search, read, and draft mail through accounts configured in macOS Mail.",
   "author": {
     "name": "PMTechDev",
@@ -23,7 +23,7 @@
     "privacyPolicyURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/TERMS.md",
     "defaultPrompt": [
-      "Show unread mail from one selected account.",
+      "Read my latest three Inbox messages across configured accounts.",
       "Find a message, then summarize it safely.",
       "Draft a reply and wait for my approval."
     ],

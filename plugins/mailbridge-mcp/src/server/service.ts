@@ -11,6 +11,7 @@ import {
   createReplyDraftInputSchema,
   getAttachmentInputSchema,
   getMessageInputSchema,
+  getMessagesInputSchema,
   listAccountsInputSchema,
   listMailboxesInputSchema,
   searchMessagesInputSchema,
@@ -19,7 +20,7 @@ import {
 } from "./schemas.js";
 
 type StructuredJson = Record<string, unknown>;
-const MAX_QUEUED_MUTATIONS = 32;
+const MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 
 function success(data: unknown): CallToolResult {
   const structuredContent: StructuredJson = { ok: true, data };
@@ -55,7 +56,7 @@ function parseInput<T extends z.ZodType>(schema: T, input: unknown): z.output<T>
 }
 
 export class MailbridgeToolService {
-  private readonly mutationQueue = new BoundedSerialQueue(MAX_QUEUED_MUTATIONS);
+  private readonly automationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS);
 
   public constructor(
     private readonly bridge: MailBridge,
@@ -64,7 +65,10 @@ export class MailbridgeToolService {
 
   public async invoke(name: ToolName, rawInput: unknown): Promise<CallToolResult> {
     try {
-      return success(await this.execute(name, rawInput));
+      return await this.automationQueue.run(
+        async () => success(await this.execute(name, rawInput)),
+        () => new MailbridgeError("AUTOMATION_BUSY"),
+      );
     } catch (error: unknown) {
       return failure(error);
     }
@@ -83,21 +87,19 @@ export class MailbridgeToolService {
   }
 
   private async runMutation<T>(operation: () => Promise<T>): Promise<T> {
-    return this.mutationQueue.run(async () => {
-      try {
-        return await operation();
-      } catch (error: unknown) {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "TIMEOUT"
-        ) {
-          throw new MailbridgeError("MUTATION_OUTCOME_UNKNOWN");
-        }
-        throw error;
+    try {
+      return await operation();
+    } catch (error: unknown) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "TIMEOUT"
+      ) {
+        throw new MailbridgeError("MUTATION_OUTCOME_UNKNOWN");
       }
-    }, () => new MailbridgeError("AUTOMATION_BUSY"));
+      throw error;
+    }
   }
 
   private async execute(name: ToolName, rawInput: unknown): Promise<unknown> {
@@ -120,6 +122,7 @@ export class MailbridgeToolService {
           ...(input.query === undefined ? {} : { query: input.query }),
           ...(input.accountId === undefined ? {} : { accountId: input.accountId }),
           ...(input.mailboxId === undefined ? {} : { mailboxId: input.mailboxId }),
+          scope: input.scope,
           ...(input.from === undefined ? {} : { from: input.from }),
           ...(input.to === undefined ? {} : { to: input.to }),
           ...(input.subject === undefined ? {} : { subject: input.subject }),
@@ -134,6 +137,13 @@ export class MailbridgeToolService {
         const input = parseInput(getMessageInputSchema, rawInput);
         return this.bridge.getMessage({
           messageId: input.messageId,
+          maxBodyChars: Math.min(input.maxBodyChars ?? this.config.maxBodyChars, this.config.maxBodyChars),
+        });
+      }
+      case "mail_get_messages": {
+        const input = parseInput(getMessagesInputSchema, rawInput);
+        return this.bridge.getMessages({
+          messageIds: input.messageIds,
           maxBodyChars: Math.min(input.maxBodyChars ?? this.config.maxBodyChars, this.config.maxBodyChars),
         });
       }

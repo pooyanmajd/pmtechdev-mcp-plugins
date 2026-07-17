@@ -14,6 +14,7 @@ Mail.includeStandardAdditions = false;
 
 var MAX_MAILBOXES = 10000;
 var MAX_MESSAGES_SCANNED = 10000;
+var DEFAULT_SEARCH_TIME_BUDGET_MS = 12000;
 var MAX_HEADERS = 200;
 var MAX_HEADER_CHARS = 4096;
 var MAX_RECIPIENTS = 100;
@@ -321,30 +322,44 @@ function flattenMailboxes(account, includeNested) {
   return output;
 }
 
+function inboxMailbox(account) {
+  var mailboxes = listProperty(account, "mailboxes");
+  for (var index = 0; index < mailboxes.length; index += 1) {
+    if (stringProperty(mailboxes[index], "name", "").toLowerCase() === "inbox") {
+      return { account: account, mailbox: mailboxes[index], path: [stringProperty(mailboxes[index], "name", "INBOX")] };
+    }
+  }
+  return null;
+}
+
 function cleanMessageId(value) {
   var result = asString(value, "").trim();
   return result || undefined;
 }
 
-function rawMessage(account, mailboxPath, message) {
+function rawMessage(account, mailboxPath, message, includeExtended) {
   var key = stringProperty(message, "id", "");
   if (!key) fail("MAIL_AUTOMATION_ERROR", "Mail.app returned a message without an identifier.");
   var received = dateProperty(message, "dateReceived");
-  var sent = dateProperty(message, "dateSent");
-  var size = numberProperty(message, "messageSize", -1);
-  return {
+  var sent = received ? undefined : dateProperty(message, "dateSent");
+  var result = {
     accountKey: accountKey(account),
     path: mailboxPath.slice(0),
     messageKey: key,
-    rfcMessageId: cleanMessageId(property(message, "messageId", "")),
     subject: stringProperty(message, "subject", ""),
     sender: stringProperty(message, "sender", ""),
     dateReceived: received,
     dateSent: sent,
     read: boolProperty(message, "readStatus", false),
     flagged: boolProperty(message, "flaggedStatus", false),
-    sizeBytes: size >= 0 ? size : undefined,
   };
+  if (includeExtended) {
+    result.rfcMessageId = cleanMessageId(property(message, "messageId", ""));
+    if (received) result.dateSent = dateProperty(message, "dateSent");
+    var size = numberProperty(message, "messageSize", -1);
+    result.sizeBytes = size >= 0 ? size : undefined;
+  }
+  return result;
 }
 
 function rawRecipient(recipient) {
@@ -427,10 +442,22 @@ function recipientText(message) {
 }
 
 function matchesSearch(message, input) {
-  var subject = lower(property(message, "subject", ""));
-  var sender = lower(property(message, "sender", ""));
-  var messageId = lower(property(message, "messageId", ""));
+  var subject;
+  var sender;
+  var messageId;
   var recipientCache;
+  function subjectValue() {
+    if (subject === undefined) subject = lower(property(message, "subject", ""));
+    return subject;
+  }
+  function senderValue() {
+    if (sender === undefined) sender = lower(property(message, "sender", ""));
+    return sender;
+  }
+  function messageIdValue() {
+    if (messageId === undefined) messageId = lower(property(message, "messageId", ""));
+    return messageId;
+  }
   function recipientValue() {
     if (recipientCache === undefined) recipientCache = recipientText(message);
     return recipientCache;
@@ -439,13 +466,13 @@ function matchesSearch(message, input) {
   if (input.query) {
     var query = lower(input.query);
     // Generic search intentionally stays on metadata; full body access is reserved for getMessage.
-    if (subject.indexOf(query) < 0 && sender.indexOf(query) < 0 && messageId.indexOf(query) < 0 && recipientValue().indexOf(query) < 0) {
+    if (subjectValue().indexOf(query) < 0 && senderValue().indexOf(query) < 0 && messageIdValue().indexOf(query) < 0 && recipientValue().indexOf(query) < 0) {
       return false;
     }
   }
-  if (input.from && sender.indexOf(lower(input.from)) < 0) return false;
+  if (input.from && senderValue().indexOf(lower(input.from)) < 0) return false;
   if (input.to && recipientValue().indexOf(lower(input.to)) < 0) return false;
-  if (input.subject && subject.indexOf(lower(input.subject)) < 0) return false;
+  if (input.subject && subjectValue().indexOf(lower(input.subject)) < 0) return false;
   // The public tool exposes these as "only" filters; false means do not filter.
   if (input.unread === true && boolProperty(message, "readStatus", false)) return false;
   if (input.flagged === true && !boolProperty(message, "flaggedStatus", false)) return false;
@@ -460,49 +487,16 @@ function matchesSearch(message, input) {
   return true;
 }
 
-function nativeSearchPredicate(input) {
-  var conditions = [];
-  if (input.unread === true) conditions.push({ readStatus: false });
-  if (input.flagged === true) conditions.push({ flaggedStatus: true });
-  if (input.from) conditions.push({ sender: { _contains: input.from } });
-  if (input.subject) conditions.push({ subject: { _contains: input.subject } });
-  if (input.dateFrom) {
-    var lowerBound = new Date(input.dateFrom);
-    if (!isNaN(lowerBound.getTime())) {
-      conditions.push({ dateReceived: { _greaterThan: new Date(lowerBound.getTime() - 1) } });
-    }
-  }
-  if (input.dateTo) {
-    var upperBound = new Date(input.dateTo);
-    if (!isNaN(upperBound.getTime())) {
-      conditions.push({ dateReceived: { _lessThan: upperBound } });
-    }
-  }
-  if (conditions.length === 0) return null;
-  return conditions.length === 1 ? conditions[0] : { _and: conditions };
-}
-
-function searchMessageCollection(mailbox, input) {
-  var messages;
-  try {
-    messages = mailbox.messages;
-  } catch (_) {
-    return { messages: null };
-  }
-  var predicate = nativeSearchPredicate(input);
-  if (!predicate || !messages || typeof messages.whose !== "function") return { messages: messages };
-  try {
-    return { messages: messages.whose(predicate), fallbackMessages: messages };
-  } catch (_) {
-    // Mail versions that reject a native predicate retain the bounded indexed fallback.
-    return { messages: messages };
-  }
-}
-
 function searchMessagesOperation(request) {
   var input = requireObject(request.input, "input");
   var limit = Math.min(Number(input.limit) || 25, request.policy.maxResults, 100);
+  var configuredSearchTimeBudget = Number(request.policy.searchTimeBudgetMs);
+  var searchTimeBudgetMs = isFinite(configuredSearchTimeBudget) && configuredSearchTimeBudget >= 1
+    ? Math.floor(configuredSearchTimeBudget)
+    : DEFAULT_SEARCH_TIME_BUDGET_MS;
+  var startedAt = Date.now();
   var selectedMailboxes = [];
+  var selectionIncomplete = false;
   if (input.mailbox) {
     var resolved = resolveMailbox(input.mailbox, request.policy);
     selectedMailboxes.push(resolved);
@@ -517,9 +511,15 @@ function searchMessagesOperation(request) {
       }
     }
     for (var selectedIndex = 0; selectedIndex < selectedAccounts.length; selectedIndex += 1) {
-      var flattened = flattenMailboxes(selectedAccounts[selectedIndex], true);
-      for (var mailboxIndex = 0; mailboxIndex < flattened.length; mailboxIndex += 1) {
-        selectedMailboxes.push(flattened[mailboxIndex]);
+      if (input.scope === "inbox") {
+        var inbox = inboxMailbox(selectedAccounts[selectedIndex]);
+        if (inbox) selectedMailboxes.push(inbox);
+        else selectionIncomplete = true;
+      } else {
+        var flattened = flattenMailboxes(selectedAccounts[selectedIndex], true);
+        for (var mailboxIndex = 0; mailboxIndex < flattened.length; mailboxIndex += 1) {
+          selectedMailboxes.push(flattened[mailboxIndex]);
+        }
       }
     }
   }
@@ -527,100 +527,106 @@ function searchMessagesOperation(request) {
   var matches = [];
   var seenMessages = Object.create(null);
   var scanned = 0;
-  var skipped = false;
+  var skipped = selectionIncomplete;
+  var budgetExhausted = false;
   function timestamp(summary) {
     return Date.parse(summary.dateReceived || summary.dateSent || "") || 0;
   }
-  function newestFirst(left, right) {
-    return timestamp(right) - timestamp(left);
+  function searchBudgetAvailable() {
+    return scanned < MAX_MESSAGES_SCANNED && Date.now() - startedAt < searchTimeBudgetMs;
   }
   var mailboxScans = [];
   for (var selectedMailboxIndex = 0; selectedMailboxIndex < selectedMailboxes.length; selectedMailboxIndex += 1) {
     var selectedMailbox = selectedMailboxes[selectedMailboxIndex];
-    var messageCollection = searchMessageCollection(selectedMailbox.mailbox, input);
+    var messages;
+    try {
+      messages = selectedMailbox.mailbox.messages;
+    } catch (_) {
+      messages = null;
+    }
     mailboxScans.push({
       selectedMailbox: selectedMailbox,
-      messages: messageCollection.messages,
-      fallbackMessages: messageCollection.fallbackMessages,
+      messages: messages,
       index: 0,
       done: false,
+      candidate: null,
     });
   }
 
-  // Round-robin across mailboxes so one large archive cannot consume the entire
-  // scan budget before any other account/mailbox is considered.
-  var hasMore = mailboxScans.length > 0;
-  while (hasMore && scanned < MAX_MESSAGES_SCANNED) {
-    hasMore = false;
-    for (var scanIndex = 0; scanIndex < mailboxScans.length && scanned < MAX_MESSAGES_SCANNED; scanIndex += 1) {
-      var scan = mailboxScans[scanIndex];
-      if (scan.done) continue;
-      hasMore = true;
-      var access = collectionValueItem(scan.messages, scan.index);
-      scan.index += 1;
-      if (access.status === "end") {
-        scan.done = true;
-        continue;
-      }
-      if (access.status === "error") {
-        if (scan.fallbackMessages) {
-          // JXA may defer predicate evaluation until the first collection access.
-          // Retry once against the original collection without widening the scan budget.
-          scan.messages = scan.fallbackMessages;
-          scan.fallbackMessages = null;
-          scan.index = 0;
-          continue;
-        }
-        scan.done = true;
-        skipped = true;
-        continue;
-      }
-      scanned += 1;
-      var identityResult = collectionItemIdentity(access.item);
-      if (identityResult.status === "error") {
-        skipped = true;
-        continue;
-      }
-      var message = access.item;
-      try {
-        if (matchesSearch(message, input)) {
-          var summary = rawMessage(scan.selectedMailbox.account, scan.selectedMailbox.path, message);
-          var identity = summary.accountKey + "\u0000" + summary.messageKey;
-          if (seenMessages[identity]) continue;
-          seenMessages[identity] = true;
-          matches.push(summary);
-          // Keep memory bounded while still selecting the newest results globally.
-          if (matches.length > limit * 4) {
-            matches.sort(newestFirst);
-            matches.length = limit;
-          }
-        }
-      } catch (_) {
-        // A corrupt/unavailable individual message must not fail an otherwise useful search.
-        skipped = true;
+  function advanceOne(scan) {
+    if (scan.done || scan.candidate) return;
+    if (!searchBudgetAvailable()) {
+      budgetExhausted = true;
+      return;
+    }
+    var access = collectionValueItem(scan.messages, scan.index);
+    scan.index += 1;
+    if (access.status === "end") {
+      scan.done = true;
+      return;
+    }
+    if (access.status === "error") {
+      scan.done = true;
+      skipped = true;
+      return;
+    }
+    scanned += 1;
+    try {
+      if (!matchesSearch(access.item, input)) return;
+      var summary = rawMessage(scan.selectedMailbox.account, scan.selectedMailbox.path, access.item, false);
+      var identity = summary.accountKey + "\u0000" + summary.messageKey;
+      if (seenMessages[identity]) return;
+      seenMessages[identity] = true;
+      scan.candidate = summary;
+    } catch (_) {
+      // A corrupt/unavailable individual message must not fail an otherwise useful search.
+      skipped = true;
+    }
+  }
+
+  function fillCandidates() {
+    var pending = true;
+    while (pending && !budgetExhausted) {
+      pending = false;
+      for (var scanIndex = 0; scanIndex < mailboxScans.length; scanIndex += 1) {
+        var scan = mailboxScans[scanIndex];
+        if (scan.done || scan.candidate) continue;
+        pending = true;
+        advanceOne(scan);
+        if (budgetExhausted) return;
       }
     }
   }
-  matches.sort(newestFirst);
-  var incomplete = skipped;
-  if (scanned >= MAX_MESSAGES_SCANNED) {
-    for (var incompleteIndex = 0; incompleteIndex < mailboxScans.length; incompleteIndex += 1) {
-      if (!mailboxScans[incompleteIndex].done) incomplete = true;
+
+  // Mail exposes each mailbox newest-first. Merge those ordered streams instead
+  // of rescanning every selected mailbox before returning a small latest page.
+  fillCandidates();
+  while (matches.length < limit && !budgetExhausted) {
+    var newestScan = null;
+    for (var candidateIndex = 0; candidateIndex < mailboxScans.length; candidateIndex += 1) {
+      var candidateScan = mailboxScans[candidateIndex];
+      if (!candidateScan.candidate) continue;
+      if (!newestScan || timestamp(candidateScan.candidate) > timestamp(newestScan.candidate)) {
+        newestScan = candidateScan;
+      }
     }
+    if (!newestScan) break;
+    matches.push(newestScan.candidate);
+    newestScan.candidate = null;
+    if (matches.length >= limit) break;
+    while (!newestScan.done && !newestScan.candidate && !budgetExhausted) advanceOne(newestScan);
   }
+
   return {
-    messages: matches.slice(0, limit),
+    messages: matches,
     scannedCount: scanned,
-    incomplete: incomplete,
+    incomplete: skipped || budgetExhausted,
   };
 }
 
-function getMessageOperation(request) {
-  var input = requireObject(request.input, "input");
-  var resolved = resolveMessage(input.message, request.policy);
-  var summary = rawMessage(resolved.account, resolved.path, resolved.message);
+function fullMessage(resolved, maximum) {
+  var summary = rawMessage(resolved.account, resolved.path, resolved.message, true);
   var body = stringProperty(resolved.message, "content", "");
-  var maximum = Math.min(Number(input.maxBodyChars) || request.policy.maxBodyChars, request.policy.maxBodyChars);
   var originalBodyChars = body.length;
   summary.body = body.slice(0, maximum);
   summary.bodyTruncated = originalBodyChars > maximum;
@@ -649,6 +655,26 @@ function getMessageOperation(request) {
     summary.attachments.push(rawAttachment(resolved, attachments[attachmentIndex], attachmentIndex));
   }
   return summary;
+}
+
+function getMessageOperation(request) {
+  var input = requireObject(request.input, "input");
+  var resolved = resolveMessage(input.message, request.policy);
+  var maximum = Math.min(Number(input.maxBodyChars) || request.policy.maxBodyChars, request.policy.maxBodyChars);
+  return fullMessage(resolved, maximum);
+}
+
+function getMessagesOperation(request) {
+  var input = requireObject(request.input, "input");
+  if (!Array.isArray(input.messages) || input.messages.length === 0 || input.messages.length > request.policy.maxResults) {
+    fail("INVALID_REQUEST", "The message identifier batch is invalid.");
+  }
+  var maximum = Math.min(Number(input.maxBodyChars) || request.policy.maxBodyChars, request.policy.maxBodyChars);
+  var output = [];
+  for (var index = 0; index < input.messages.length; index += 1) {
+    output.push(fullMessage(resolveMessage(input.messages[index], request.policy), maximum));
+  }
+  return output;
 }
 
 function getAttachmentOperation(request) {
@@ -724,7 +750,7 @@ function setMessageStateOperation(request) {
   try {
     if (typeof input.read === "boolean") resolved.message.readStatus = input.read;
     if (typeof input.flagged === "boolean") resolved.message.flaggedStatus = input.flagged;
-    return rawMessage(resolved.account, resolved.path, resolved.message);
+    return rawMessage(resolved.account, resolved.path, resolved.message, true);
   } catch (error) {
     try {
       resolved.message.readStatus = previousRead;
@@ -867,6 +893,7 @@ var OPERATIONS = {
   listMailboxes: listMailboxesOperation,
   searchMessages: searchMessagesOperation,
   getMessage: getMessageOperation,
+  getMessages: getMessagesOperation,
   getAttachment: getAttachmentOperation,
   setMessageState: setMessageStateOperation,
   createDraft: createDraftOperation,

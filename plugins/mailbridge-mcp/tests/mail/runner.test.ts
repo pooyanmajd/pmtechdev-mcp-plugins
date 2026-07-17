@@ -15,6 +15,7 @@ const REQUEST: AutomationRequest = {
     maxBodyChars: 1_000,
     maxAttachmentBytes: 1_024,
     maxResults: 25,
+    searchTimeBudgetMs: 12_000,
   },
 };
 
