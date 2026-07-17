@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/codeql.yml/badge.svg)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/actions/workflows/codeql.yml)
+[![Latest release](https://img.shields.io/github/v/release/pooyanmajd/pmtechdev-mcp-plugins?display_name=tag&sort=semver)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 PMTechDev MCP & Plugins is an expandable monorepo, reusable development kit, and Codex marketplace for local-first Model Context Protocol servers and plugins maintained by PMTechDev.
@@ -12,7 +13,7 @@ The repository keeps each integration independently buildable under `plugins/`, 
 
 | Plugin | Purpose | Platforms | Status |
 | --- | --- | --- | --- |
-| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | `0.2.0` |
+| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | [`0.2.1`](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.1) |
 
 Mailbridge remains read-only by default. Version 0.2 adds opt-in, allowlisted, confirmed sending for attachment-free new messages and replies; existing `full` configurations do not gain send authority.
 
@@ -37,18 +38,20 @@ pmtechdev-mcp-plugins/
 Install the current marketplace snapshot:
 
 ```bash
-codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For a reviewed, immutable version, pin the marketplace to the Mailbridge `0.2.0` release tag instead:
+For the reviewed, immutable release, pin the marketplace to Mailbridge `0.2.1` instead:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.1
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-Start a new Codex task after installing or updating a plugin so its skills and MCP tools are loaded.
+These commands target Codex CLI. Plugins can also be installed for Codex in the ChatGPT desktop app; they are not currently available in the Codex IDE extension. See the official [Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) for supported surfaces. Start a new Codex task or CLI session after installing or updating a plugin so its skills and MCP tools are loaded.
+
+Mailbridge requires macOS, a working account in Mail.app, and Node.js 22 or 24. The marketplace payload is prebuilt, so npm and a source checkout are not required for plugin installation. The [immutable `0.2.1` release](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.1) includes the plugin tarball, SHA-256 checksums, a CycloneDX SBOM, and signed GitHub provenance attestations.
 
 Only install Mailbridge in a trusted Codex or MCP host: the launching host receives macOS Automation authority for Mail. The marketplace configuration is read-only by default, but selected mail and tool results may still be sent to the model provider configured in that host. Review the [Mailbridge install and privacy guidance](plugins/mailbridge-mcp/README.md#install-as-a-codex-plugin) before connecting sensitive accounts.
 

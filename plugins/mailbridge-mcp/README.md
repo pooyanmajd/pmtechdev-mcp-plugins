@@ -56,7 +56,7 @@ Read the workspace [Security](../../SECURITY.md), [Privacy](../../PRIVACY.md), a
 - macOS with Mail.app
 - At least one account configured and working in Mail.app
 - Node.js 22 or 24
-- npm
+- npm only when building from source
 - An MCP client that supports local STDIO servers; the included plugin metadata targets Codex
 
 Mailbridge does not run on Linux or Windows. It does not configure Mail accounts for you.
@@ -95,13 +95,15 @@ Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before install
 
 This plugin directory contains a complete payload: `.codex-plugin/plugin.json`, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in read-only mode.
 
+Marketplace installation is supported in Codex CLI and for Codex in the ChatGPT desktop app. Plugins are not currently available in the Codex IDE extension. The commands below use Codex CLI; see the official [Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) for other supported installation surfaces.
+
 > [!CAUTION]
 > Install Mailbridge only in a trusted Codex or MCP host. The host process receives macOS Automation authority for Mail, so a compromised host can exceed Mailbridge's own tool policy. Selected mail content and tool results may also be sent to the model provider configured in the host. For sensitive mail, prefer a suitably governed or local model, keep `read-only` mode, and configure `MAILBRIDGE_ALLOWED_ACCOUNTS` through a reviewed custom MCP registration.
 
 The repository root is the published PMTechDev marketplace. Install the current marketplace snapshot with:
 
 ```bash
-codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 

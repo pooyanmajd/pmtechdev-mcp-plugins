@@ -4,6 +4,10 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarified supported Codex plugin surfaces, prebuilt installation requirements, and the current marketplace command.
+
 ## [0.2.1] - 2026-07-17
 
 ### Fixed

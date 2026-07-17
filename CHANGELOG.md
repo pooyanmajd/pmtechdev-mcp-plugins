@@ -4,12 +4,22 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+- Corrected public installation and release documentation to identify `0.2.1` as the supported immutable Mailbridge release.
+- Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.
+
+## [0.2.1] - 2026-07-17
+
+- Published the first supported Mailbridge 0.2 release with the separately gated, allowlisted, confirmed send capability from `0.2.0`.
+- Fixed release SBOM attestation by passing the exact generated CycloneDX file path.
+- Published an immutable GitHub release with checksums, an SBOM, and signed provenance attestations.
+
 ## [0.2.0] - 2026-07-17
 
 - Added Mailbridge's separately gated, allowlisted, confirmed send capability for attachment-free new messages and replies.
 - Preserved legacy `full` mode as non-send to avoid privilege escalation during upgrades.
 - Added a dedicated outbound-mail design/security review, fixed-dispatcher contract tests, explicit send annotations, and unknown-outcome retry protection.
 - Updated plugin, marketplace, privacy, security, release, and safe-use documentation for the new boundary.
+- The tag was retained for audit history, but its workflow stopped before release publication; use `0.2.1` as the supported public release.
 
 ## [0.1.2] - 2026-07-17
 
@@ -29,7 +39,8 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 - Added a validated plugin starter and catalog-aware scaffolder.
 - Added Mailbridge MCP as the first independently packaged plugin.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.0
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.1
+[0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.2
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0
