@@ -53,11 +53,12 @@ jobs:
           cache: npm
 
       - name: Verify release tag and versions
+        id: release_metadata
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           node --input-type=module --eval '
-            import { readFileSync } from "node:fs";
+            import { appendFileSync, readFileSync } from "node:fs";
             const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
             const root = readJson("package.json");
             const pkg = readJson("plugins/mailbridge-mcp/package.json");
@@ -65,6 +66,7 @@ jobs:
             const expectedTag = `v${pkg.version}`;
             if (process.env.RELEASE_TAG !== expectedTag) throw new Error(`expected tag ${expectedTag}`);
             if (root.version !== pkg.version || plugin.version !== pkg.version) throw new Error("release versions differ");
+            appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\n`);
           '
 
       - name: Install locked workspace dependencies
@@ -110,7 +112,7 @@ jobs:
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: release/mailbridge-mcp-*.tgz
-          sbom-path: release/mailbridge-mcp-*.build.cdx.json
+          sbom-path: release/mailbridge-mcp-${{ steps.release_metadata.outputs.version }}.build.cdx.json
 
       - name: Create draft GitHub release with all assets
         env:
