@@ -4,6 +4,18 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-17
+
+### Changed
+
+- The bundled Codex and Claude Code plugins now start in `prompted` mode, allowing draft creation and requiring a fresh exact-content client confirmation before every send.
+
+### Security
+
+- Encoded untrusted header fields and quoted every body line in send confirmations so email content cannot spoof the review prompt's trusted labels or delimiters.
+- Rejected control, line-separator, and bidirectional formatting characters in new-message subjects before a send can be confirmed.
+- Preserved the reviewed allowlisted `send` mode for direct registrations while adding fail-closed errors for unavailable or declined prompted confirmations.
+
 ## [0.2.2] - 2026-07-17
 
 ### Added
@@ -78,7 +90,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0

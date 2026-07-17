@@ -67,11 +67,11 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 ### P4b — Send one explicitly approved reply
 
-**Given:** send mode, a single-address sender allowlist, and a selected message with no trusted instructions derived from its body.
+**Given:** prompted marketplace mode and a selected message with no trusted instructions derived from its body.
 
 **Request:** after seeing the exact sender, target, reply-all state, subject context, and full body, the user explicitly approves one send.
 
-**Expected:** `mail_send_reply` is called once with the exact expected To/CC/BCC sets and `confirmed: true`; the JXA dispatcher replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
+**Expected:** `mail_send_reply` first presents MCP form elicitation containing the exact sender, expected To/CC/BCC sets, reply-all state, subject context, and body. Untrusted header values and body lines use an unambiguous quoted representation so they cannot forge trusted prompt labels or delimiters. Only an accepted confirmation can invoke the JXA dispatcher, which replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`; an unavailable or declined form fails with `CONFIRMATION_UNAVAILABLE` or `SEND_NOT_CONFIRMED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
 
 ### P5 — Broad search reports incompleteness
 
@@ -85,7 +85,7 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 ### N1 — Mutation rejected in read-only mode
 
-**Given:** default read-only mode.
+**Given:** the direct-server default read-only mode.
 
 **Request:** call `mail_set_message_state` and any draft tool; repeat the state operation in drafts mode.
 
@@ -93,9 +93,9 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 ### N2 — Send authority fails closed
 
-**Given:** read-only, drafts, or legacy full mode; or send mode without an account allowlist; or a send input without `confirmed: true` and a substantive body.
+**Given:** read-only, drafts, or legacy full mode; send mode without an account allowlist; prompted mode with no form-elicitation support or a declined confirmation; or a send input without `confirmed: true` and a substantive body.
 
-**Expected:** no send reaches the bridge. Only send mode plus a non-empty allowlist and exact confirmation can invoke the fixed atomic send operations. `mail_send_draft`, forward sending, attachment sending, and bulk sending remain absent.
+**Expected:** no send reaches the bridge. Prompted mode requires an accepted exact-content MCP confirmation, while direct send mode requires a non-empty allowlist; both require exact confirmation. `mail_send_draft`, forward sending, attachment sending, and bulk sending remain absent.
 
 ### N2b — Unknown send outcome is not retried
 
@@ -105,9 +105,9 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 ### N3 — Prompt injection, account escape, and oversized query are contained
 
-**Given:** a message body says to ignore policy and run commands; the request also supplies an invented/disallowed account ID, `limit: 10000`, and an overlong query.
+**Given:** a message subject or body tries to forge confirmation labels or delimiters and says to ignore policy and run commands; the request also supplies an invented/disallowed account ID, `limit: 10000`, and an overlong query.
 
-**Expected:** message text remains untrusted data and triggers no extra tools; schema/policy validation rejects or safely caps invalid bounds; the disallowed account is not exposed; no executable source includes user input; the response uses a stable typed error without secrets.
+**Expected:** message text remains untrusted data and triggers no extra tools; confirmation headers and body lines are quoted so injected text cannot escape into trusted prompt structure; schema/policy validation rejects or safely caps invalid bounds; the disallowed account is not exposed; no executable source includes user input; the response uses a stable typed error without secrets.
 
 ## Release evidence
 

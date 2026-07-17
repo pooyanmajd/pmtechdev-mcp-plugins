@@ -12,6 +12,7 @@ const REQUEST: AutomationRequest = {
   input: { query: "'; Application('Finder').quit(); //" },
   policy: {
     allowedAccounts: [],
+    promptedSend: false,
     maxBodyChars: 1_000,
     maxAttachmentBytes: 1_024,
     maxResults: 25,

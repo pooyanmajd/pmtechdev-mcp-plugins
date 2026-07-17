@@ -5,7 +5,7 @@
       "args": ["./dist/cli.js"],
       "cwd": ".",
       "env": {
-        "MAILBRIDGE_MODE": "read-only"
+        "MAILBRIDGE_MODE": "prompted"
       }
     }
   }

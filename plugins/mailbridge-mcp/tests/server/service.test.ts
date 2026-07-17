@@ -183,6 +183,113 @@ describe("MailbridgeToolService", () => {
     expect(enabled.spies.sendReply).toHaveBeenCalledOnce();
   });
 
+  it("requires and records a fresh exact-content confirmation for every prompted send", async () => {
+    const enabled = createFakeBridge();
+    enabled.spies.getMessage.mockResolvedValue({ subject: "Existing conversation" });
+    const confirmMailSend = vi.fn().mockResolvedValue(true);
+    const service = new MailbridgeToolService(
+      enabled.bridge,
+      config("prompted"),
+      confirmMailSend,
+    );
+
+    const message = await service.invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    });
+    const reply = await service.invoke("mail_send_reply", {
+      messageId: "message:1",
+      from: "me@example.com",
+      expectedTo: ["person@example.com"],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    });
+
+    expect(message.isError).not.toBe(true);
+    expect(reply.isError).not.toBe(true);
+    expect(confirmMailSend).toHaveBeenNthCalledWith(1, {
+      kind: "message",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      cc: [],
+      bcc: [],
+      subject: "Approved subject",
+      body: "Approved body",
+    });
+    expect(confirmMailSend).toHaveBeenNthCalledWith(2, {
+      kind: "reply",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      cc: [],
+      bcc: [],
+      sourceSubject: "Existing conversation",
+      replyAll: false,
+      body: "Approved reply",
+    });
+    expect(enabled.spies.sendMessage).toHaveBeenCalledOnce();
+    expect(enabled.spies.sendReply).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when prompted confirmation is unavailable or declined", async () => {
+    const unavailable = createFakeBridge();
+    const unavailableResult = await new MailbridgeToolService(
+      unavailable.bridge,
+      config("prompted"),
+    ).invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      body: "Approved body",
+      confirmed: true,
+    });
+    expect(parsedResult(unavailableResult)).toMatchObject({
+      ok: false,
+      error: { code: "CONFIRMATION_UNAVAILABLE" },
+    });
+    expect(unavailable.spies.sendMessage).not.toHaveBeenCalled();
+
+    const declined = createFakeBridge();
+    const declinedResult = await new MailbridgeToolService(
+      declined.bridge,
+      config("prompted"),
+      vi.fn().mockResolvedValue(false),
+    ).invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      body: "Approved body",
+      confirmed: true,
+    });
+    expect(parsedResult(declinedResult)).toMatchObject({
+      ok: false,
+      error: { code: "SEND_NOT_CONFIRMED" },
+    });
+    expect(declined.spies.sendMessage).not.toHaveBeenCalled();
+
+    const failed = createFakeBridge();
+    const failedResult = await new MailbridgeToolService(
+      failed.bridge,
+      config("prompted"),
+      vi.fn().mockRejectedValue(new Error("client disconnected")),
+    ).invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      body: "Approved body",
+      confirmed: true,
+    });
+    expect(parsedResult(failedResult)).toMatchObject({
+      ok: false,
+      error: { code: "CONFIRMATION_UNAVAILABLE" },
+    });
+    expect(failed.spies.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("serializes modifying operations and marks mutation timeouts as outcome unknown", async () => {
     const serialized = createFakeBridge();
     let releaseFirst = (): void => undefined;
@@ -267,6 +374,7 @@ describe("MailbridgeToolService", () => {
     ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["not-an-email"] }],
     ["mail_create_forward_draft", { messageId: "id", from: "me@example.com" }],
     ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], body: "Hello", confirmed: false }],
+    ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], subject: "Spoof\nTo: attacker@example.com", body: "Hello", confirmed: true }],
     ["mail_send_reply", { messageId: "id", from: "me@example.com", expectedTo: ["person@example.com"], body: "   ", confirmed: true }],
   ] as const)("rejects invalid bounded input for %s", async (tool, input) => {
     const { bridge } = createFakeBridge();

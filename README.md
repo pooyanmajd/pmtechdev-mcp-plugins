@@ -13,9 +13,9 @@ The repository keeps each integration independently buildable under `plugins/`, 
 
 | Plugin | Purpose | Platforms | Status |
 | --- | --- | --- | --- |
-| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | [`0.2.2`](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.2) |
+| [Mailbridge MCP](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | [`0.3.0`](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.3.0) |
 
-Mailbridge remains read-only by default. Version 0.2 adds opt-in, allowlisted, confirmed sending for attachment-free new messages and replies; existing `full` configurations do not gain send authority.
+Mailbridge remains read-only for direct registrations by default. The bundled Codex and Claude Code plugins use client-prompted sending for attachment-free new messages and replies; existing `full` configurations do not gain send authority.
 
 ## Repository layout
 
@@ -45,10 +45,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For the reviewed, immutable release, pin the marketplace to Mailbridge `0.2.2` instead:
+For the reviewed, immutable release, pin the marketplace to Mailbridge `0.3.0` instead:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.3.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -59,15 +59,15 @@ These commands target Codex CLI. Plugins can also be installed for Codex in the 
 Install the immutable release through the native Claude Code marketplace and plugin manifests:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.2.2
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.3.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
-Run `/reload-plugins`, then use `/mcp` to confirm the bundled `mailbridge` server is connected. The Claude registration resolves `dist/cli.js` through `CLAUDE_PLUGIN_ROOT` and starts in read-only mode.
+Run `/reload-plugins`, then use `/mcp` to confirm the bundled `mailbridge` server is connected. The Claude registration resolves `dist/cli.js` through `CLAUDE_PLUGIN_ROOT` and starts in prompted mode, which fails closed unless Claude Code can display and the user accepts the exact-content send form.
 
-Mailbridge requires macOS, a working account in Mail.app, and Node.js 22 or 24. The marketplace payload is prebuilt, so npm and a source checkout are not required for plugin installation. The [immutable `0.2.2` release](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.2) includes the plugin tarball, SHA-256 checksums, a CycloneDX SBOM, and signed GitHub provenance attestations.
+Mailbridge requires macOS, a working account in Mail.app, and Node.js 22 or 24. The marketplace payload is prebuilt, so npm and a source checkout are not required for plugin installation. The [immutable `0.3.0` release](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.3.0) includes the plugin tarball, SHA-256 checksums, a CycloneDX SBOM, and signed GitHub provenance attestations.
 
-Only install Mailbridge in a trusted Codex, Claude Code, or MCP host: the launching host receives macOS Automation authority for Mail. The marketplace configuration is read-only by default, but selected mail and tool results may still be sent to the model provider configured in that host. Review the [Mailbridge security model](plugins/mailbridge-mcp/README.md#security-model) before connecting sensitive accounts.
+Only install Mailbridge in a trusted Codex, Claude Code, or MCP host: the launching host receives macOS Automation authority for Mail. The marketplace configuration uses prompted mode and direct registrations remain read-only by default; selected mail and tool results may still be sent to the model provider configured in that host. Review the [Mailbridge security model](plugins/mailbridge-mcp/README.md#security-model) before connecting sensitive accounts.
 
 ## Develop the workspace
 

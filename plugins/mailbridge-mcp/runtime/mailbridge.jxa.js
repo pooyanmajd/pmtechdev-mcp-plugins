@@ -1189,8 +1189,8 @@ function requireSendConfirmation(request, input) {
   if (input.confirmed !== true) {
     fail("INVALID_REQUEST", "Sending requires explicit confirmation.");
   }
-  if (request.policy.allowedAccounts.length === 0) {
-    fail("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+  if (request.policy.allowedAccounts.length === 0 && request.policy.promptedSend !== true) {
+    fail("INVALID_REQUEST", "Sending requires an explicit account allowlist or prompted authorization.");
   }
 
   var body = asString(input.body, "");
@@ -1348,6 +1348,8 @@ function validateRequest(request) {
   requireObject(request.input, "input");
   requireObject(request.policy, "policy");
   if (!Array.isArray(request.policy.allowedAccounts)) fail("INVALID_REQUEST", "allowedAccounts is invalid.");
+  if (request.policy.promptedSend === undefined) request.policy.promptedSend = false;
+  if (typeof request.policy.promptedSend !== "boolean") fail("INVALID_REQUEST", "promptedSend is invalid.");
   for (var index = 0; index < request.policy.allowedAccounts.length; index += 1) {
     request.policy.allowedAccounts[index] = normalizeEmail(request.policy.allowedAccounts[index]);
   }

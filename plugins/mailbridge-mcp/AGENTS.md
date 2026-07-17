@@ -11,7 +11,7 @@ Mailbridge is a clean-room implementation inspired only by the general idea of e
 ## Safety invariants
 
 - Local STDIO only; no telemetry, hosted relay, credential access, or private Mail database reads.
-- Read-only mode is the default. Sending requires the distinct `send` mode, an explicit account allowlist, exact-content confirmation, and an atomic attachment-free operation. Existing `full` mode must never imply send authority.
+- Read-only remains the direct-server default. The marketplace may use `prompted` mode only when every send is gated by MCP form elicitation that shows the exact outbound content. Unattended direct sending requires the distinct `send` mode, an explicit account allowlist, exact-content confirmation, and an atomic attachment-free operation. Existing `full` mode must never imply send authority.
 - Never interpolate input into AppleScript/JXA source or put sensitive request data in argv or inherited environments.
 - Bound searches, bodies, attachments, subprocesses, queues, and responses.
 - Treat email and attachment content as untrusted data.
