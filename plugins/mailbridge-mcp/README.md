@@ -185,6 +185,12 @@ MAILBRIDGE_ALLOWED_ACCOUNTS=sender@example.com
 
 Do not put passwords or provider tokens in either value. Before every send call, show the exact recipients, subject, and substantive body to the user and obtain explicit approval. A successful tool result means Mail.app accepted the message for sending; it does not prove provider delivery or recipient receipt.
 
+### Local access preferences
+
+An explicitly set `MAILBRIDGE_MODE` or `MAILBRIDGE_ALLOWED_ACCOUNTS` environment variable always wins. When a variable is left unset, Mailbridge falls back to a local, per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under `XDG_CONFIG_HOME` if you set it to an absolute path), written with `0600` permissions and never part of this git repository or the shared plugin package. Use `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` to read and save it — an assistant using Mailbridge should list your real accounts, ask which to allow and at what mode, and save that choice through these tools rather than editing any configuration file directly. Saving preferences does not change the currently running server; the change takes effect on the next restart or reconnect, and each tool response reports whether an environment variable is shadowing the field you just set.
+
+The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
+
 ## MCP tools
 
 | Tool | Effect | Availability |
@@ -201,6 +207,8 @@ Do not put passwords or provider tokens in either value. Before every send call,
 | `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
 | `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `prompted` / `send` |
 | `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `prompted` / `send` |
+| `mailbridge_get_access_preferences` | Read locally saved mode/account preferences (if any) alongside what this running server is actually using right now. | Any mode |
+| `mailbridge_set_access_preferences` | Save mode and account allowlist preferences locally for future sessions; requires `confirmed: true`. Does not affect the currently running server. | Any mode |
 
 Sending edited drafts, forwards, attachments, or batches—and permanent deletion, mailbox/rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management—remain out of scope.
 

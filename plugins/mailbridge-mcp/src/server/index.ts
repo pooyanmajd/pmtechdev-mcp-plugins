@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { MailbridgeConfig } from "../config.js";
+import type { LocalPreferencesContext } from "../local-config.js";
 import type { MailBridge } from "../mail/bridge.js";
 import { toolOutputSchema } from "./schemas.js";
 import {
@@ -8,6 +9,10 @@ import {
   type MailSendConfirmation,
 } from "./service.js";
 import { TOOL_DEFINITIONS } from "./tool-definitions.js";
+
+export interface CreateMailbridgeServerOptions {
+  readonly localPreferencesContext?: LocalPreferencesContext;
+}
 
 export const SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
@@ -57,7 +62,11 @@ function confirmationMessage(confirmation: MailSendConfirmation): string {
   return lines.join("\u2028");
 }
 
-export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeConfig): McpServer {
+export function createMailbridgeServer(
+  bridge: MailBridge,
+  config: MailbridgeConfig,
+  options?: CreateMailbridgeServerOptions,
+): McpServer {
   const server = new McpServer(SERVER_INFO, {
     capabilities: {
       tools: {},
@@ -84,9 +93,11 @@ export function createMailbridgeServer(bridge: MailBridge, config: MailbridgeCon
       });
       return result.action === "accept" && result.content?.approve === true;
     },
+    options?.localPreferencesContext,
   );
 
   for (const definition of TOOL_DEFINITIONS) {
+    if (!definition.allowedModes.includes(config.mode)) continue;
     server.registerTool(
       definition.name,
       {

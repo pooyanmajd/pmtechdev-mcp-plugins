@@ -20,7 +20,7 @@ For high-sensitivity mail, prefer a model and host whose data handling you have 
 
 ## Storage and retention
 
-Plugins must document storage they create. Mailbridge maintains no message database, credentials store, analytics history, or background index. Connected applications, MCP clients, terminals, system logs, model-provider history, and crash tooling may retain data independently.
+Plugins must document storage they create. Mailbridge maintains no message database, credentials store, analytics history, or background index. It does persist one local, per-user preferences file recording only a chosen permission mode and allowed account email addresses — no passwords, tokens, or message content — written with restrictive file permissions, never transmitted anywhere, and never part of this repository or the shared plugin package. Connected applications, MCP clients, terminals, system logs, model-provider history, and crash tooling may retain data independently.
 
 ## Credentials
 

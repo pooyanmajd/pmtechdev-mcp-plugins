@@ -338,6 +338,19 @@ describe("MailbridgeToolService", () => {
     });
   });
 
+  it("passes through non-timeout mutation failures without remapping them", async () => {
+    const failing = createFakeBridge();
+    failing.spies.setMessageState.mockRejectedValue(
+      new MailbridgeError("AUTOMATION_DENIED", "This internal detail must not survive structural mapping"),
+    );
+    const result = await new MailbridgeToolService(failing.bridge, config("full")).invoke(
+      "mail_set_message_state",
+      { messageId: "message:1", read: true },
+    );
+
+    expect(parsedResult(result)).toMatchObject({ ok: false, error: { code: "AUTOMATION_DENIED" } });
+  });
+
   it("serializes all Mail automation and rejects excess concurrent work", async () => {
     const queued = createFakeBridge();
     let releaseFirst = (): void => undefined;
@@ -363,6 +376,36 @@ describe("MailbridgeToolService", () => {
     releaseFirst();
     await Promise.all([first, second]);
     expect(queued.spies.searchMessages).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a pending prompted-mode elicitation occupy the automation queue", async () => {
+    const held = createFakeBridge();
+    let releaseConfirm = (): void => undefined;
+    const pendingConfirm = new Promise<boolean>((resolve) => {
+      releaseConfirm = () => resolve(true);
+    });
+    const confirmMailSend = vi.fn().mockReturnValue(pendingConfirm);
+    const service = new MailbridgeToolService(held.bridge, config("prompted"), confirmMailSend);
+
+    const send = service.invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      body: "Approved body",
+      confirmed: true,
+    });
+    await vi.waitFor(() => {
+      expect(confirmMailSend).toHaveBeenCalledOnce();
+    });
+
+    const unrelated = await service.invoke("mail_list_accounts", {});
+    expect(unrelated.isError).not.toBe(true);
+    expect(held.spies.sendMessage).not.toHaveBeenCalled();
+
+    releaseConfirm();
+    const result = await send;
+    expect(result.isError).not.toBe(true);
+    expect(held.spies.sendMessage).toHaveBeenCalledOnce();
   });
 
   it.each([

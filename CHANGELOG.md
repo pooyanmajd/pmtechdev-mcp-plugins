@@ -6,6 +6,7 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 - Corrected public installation and release documentation to identify `0.2.1` as the supported immutable Mailbridge release.
 - Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.
+- Added Mailbridge local, per-user access-preference tools and fixed a prompted-send confirmation from occupying the automation queue for its full pending duration; see the plugin's own changelog for detail.
 
 ## [0.2.1] - 2026-07-17
 

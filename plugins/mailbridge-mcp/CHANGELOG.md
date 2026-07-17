@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Added
+
+- `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` tools, and a local, per-user access-preferences file (`~/Library/Application Support/mailbridge-mcp/preferences.json` by default) so a user's chosen mode and account allowlist can be saved once and reused across sessions without editing any shared or git-tracked configuration file. An explicitly set environment variable always takes precedence over a saved value. Both tools are available in every mode, including `read-only`.
+- Mode-scoped tool registration: each tool now advertises only in the modes that can actually use it, so a `read-only` server no longer offers `mail_send_message` and similar tools only to have them fail closed. The two access-preference tools are always registered.
+
+### Fixed
+
+- A pending prompted-mode send confirmation no longer occupies a slot in the bounded automation queue for its full duration; only the actual Mail.app/JXA call is now serialized, so unrelated read calls can no longer be starved into `AUTOMATION_BUSY` while a human is still reviewing a send.
+- Elicitation confirmation prompts now join review sections with a Unicode line separator instead of an ordinary newline, since Codex renders ordinary newlines in elicitation messages as collapsed whitespace.
+- Reply-send verification now tolerates the single trailing ASCII space current Mail.app appends to script-set reply bodies as the only permitted post-approval body difference; every other change still fails closed with `SEND_CONTENT_CHANGED`.
+
 ## [0.3.0] - 2026-07-17
 
 ### Changed

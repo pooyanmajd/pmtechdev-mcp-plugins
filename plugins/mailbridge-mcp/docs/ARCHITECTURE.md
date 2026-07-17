@@ -35,6 +35,8 @@ Mailbridge MCP is a macOS-only, local STDIO server. It exposes a fixed, bounded 
 
 `src/cli.ts` parses configuration and connects the server to STDIO. Tests inject a fake implementation of the mail bridge, keeping default CI independent of Mail.app and macOS Automation consent.
 
+`src/local-config.ts` reads and writes the local, per-user access-preferences file consulted by `src/cli.ts` at startup and by the `mailbridge_get_access_preferences`/`mailbridge_set_access_preferences` tools. It is independent of the Mail.app/JXA trust boundary below — no Apple Events are involved — and a missing, corrupt, or unreadable file degrades to the built-in default with a stderr diagnostic rather than crashing startup.
+
 ## Data flow
 
 1. The MCP client invokes one registered tool with structured arguments.
@@ -84,7 +86,7 @@ Mailboxes and messages can change between calls. Mailbridge favors explicit `NOT
 - Search defaults to Inbox, is bounded, and results can never exceed 100.
 - Mail exposes each mailbox newest-first. Search performs a k-way merge across selected Inbox streams, so a small latest page reads only the next candidate needed from each account instead of rescanning every mailbox.
 - Search accesses message collections by index rather than eagerly materializing an entire mailbox. An internal budget derived from the configured subprocess timeout returns partial results with `incomplete=true` before the outer deadline; incomplete searches must be narrowed before treating absence as conclusive.
-- All Mail.app automation is serialized with a bounded queue. This avoids concurrent Apple Event scans competing inside Mail.app; excess parallel work fails with `AUTOMATION_BUSY` instead of building an unbounded backlog.
+- All Mail.app automation is serialized with a bounded queue. This avoids concurrent Apple Event scans competing inside Mail.app; excess parallel work fails with `AUTOMATION_BUSY` instead of building an unbounded backlog. The queue wraps only the point where an operation actually reaches the bridge/JXA layer — mode and authorization checks, and a prompted send's client-side elicitation wait (which can legitimately take minutes), run before a queue slot is acquired, so a pending confirmation cannot starve unrelated calls.
 - Full bodies are capped by configured character count.
 - Batch body reads are capped to 25 selected messages and retain the per-message body limit.
 - Attachment metadata and serialized tool results are bounded.
@@ -95,6 +97,10 @@ Mailboxes and messages can change between calls. Mailbridge favors explicit `NOT
 ## Tool annotations
 
 List, search, and get operations declare `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. State and draft tools declare `readOnlyHint=false`, `destructiveHint=false`, and `openWorldHint=false`. Send tools declare `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=false`, and `openWorldHint=true` because they communicate externally through Mail.app and cannot be safely retried.
+
+## Mode-scoped tool advertising
+
+Each tool registers only in the modes that can actually use it, so a `read-only` server never advertises `mail_send_message` only to have it fail closed. This is an advertising/UX filter evaluated once at startup in `src/server/index.ts`; it does not replace the authoritative runtime checks in `src/server/service.ts` (`requireDraftsMode`/`requireStateChangeMode`/`sendAuthorization`), which remain the actual security boundary and fail closed regardless of what was advertised. `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` are the one exception, registered in every mode so a read-only server can be reconfigured without a restart-then-guess cycle.
 
 ## Distribution
 

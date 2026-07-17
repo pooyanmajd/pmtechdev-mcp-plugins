@@ -2,11 +2,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { ConfigError, loadConfig } from "./config.js";
 import { toPublicError } from "./errors.js";
+import { defaultLocalPreferencesContext, overlayLocalPreferences, readLocalPreferences } from "./local-config.js";
 import { createMailBridge } from "./mail/bridge.js";
 import { createMailbridgeServer } from "./server/index.js";
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const localPreferencesContext = defaultLocalPreferencesContext();
+  const { preferences, diagnostic } = await readLocalPreferences(localPreferencesContext.path);
+  if (diagnostic !== undefined) {
+    process.stderr.write(`Mailbridge local preferences: ${diagnostic}\n`);
+  }
+  const config = loadConfig(overlayLocalPreferences(process.env, preferences));
   const bridge = createMailBridge({
     ...(config.allowedAccounts === undefined ? {} : { allowedAccounts: [...config.allowedAccounts] }),
     promptedSend: config.mode === "prompted",
@@ -15,7 +21,7 @@ async function main(): Promise<void> {
     timeoutMs: config.timeoutMs,
     searchBudgetMs: config.searchBudgetMs,
   });
-  const server = createMailbridgeServer(bridge, config);
+  const server = createMailbridgeServer(bridge, config, { localPreferencesContext });
   await server.connect(new StdioServerTransport());
 }
 

@@ -26,6 +26,11 @@ Write tools:
 - `mail_send_message` (one confirmed attachment-free new message)
 - `mail_send_reply` (one confirmed attachment-free reply or reply-all)
 
+Local preference tools (server self-configuration, not Mail data; available in every mode):
+
+- `mailbridge_get_access_preferences`
+- `mailbridge_set_access_preferences` (requires literal `confirmed: true`)
+
 Explicitly out of scope: sending edited drafts, forwards, attachments, or batches; permanent deletion; mailbox/rule CRUD; direct database access; arbitrary AppleScript execution; background monitoring; remote MCP hosting; and credential management.
 
 ## Data and identity
@@ -38,7 +43,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 ## Runtime architecture
 
 1. `src/cli.ts` parses configuration and starts the STDIO server.
-2. `src/server/` registers MCP tools, schemas, annotations, and output formatting.
+2. `src/server/` registers MCP tools, schemas, annotations, and output formatting. Registration is mode-scoped: each tool advertises only in the modes that can actually use it (the two local preference tools are the one exception, always registered so a read-only server can be reconfigured). This is a client-facing advertising filter only; the authoritative runtime authorization checks remain in `src/server/service.ts`.
 3. `src/mail/` defines the bridge interface and domain values.
 4. `src/mail/runner.ts` invokes the fixed `runtime/mailbridge.jxa.js` dispatcher through `/usr/bin/osascript -l JavaScript`.
 5. JXA receives one bounded UTF-8 JSON request through stdin; no input is embedded into executable source, process arguments, environment variables, or temporary request files.
@@ -52,6 +57,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 - `MAILBRIDGE_MAX_RESULTS` caps search results (hard maximum 100)
 - `MAILBRIDGE_MAX_BODY_CHARS` caps returned message text
 - `MAILBRIDGE_TIMEOUT_MS` caps every automation subprocess
+- Mode and allowlist resolve in three tiers: an explicitly set, non-blank environment variable always wins; otherwise `src/local-config.ts` fills the gap from a local, per-user preferences file (`~/Library/Application Support/mailbridge-mcp/preferences.json` by default); otherwise the built-in `read-only` default applies. `src/config.ts`'s `loadConfig` itself is unchanged and unaware of the local file — `src/cli.ts` merges the file into an effective environment object before calling it, so existing validation (for example, `send` mode requiring a non-empty allowlist) still runs against the final effective values.
 
 ## MCP annotations
 
