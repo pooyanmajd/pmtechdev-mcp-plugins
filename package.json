@@ -1,8 +1,8 @@
 {
   "name": "pmtechdev-mcp-plugins",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
-  "description": "PMTechDev monorepo and Codex marketplace for reusable MCP servers and plugins",
+  "description": "PMTechDev monorepo and Codex and Claude Code marketplace for reusable MCP servers and plugins",
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins#readme",
   "repository": {
     "type": "git",

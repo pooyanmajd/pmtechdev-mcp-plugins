@@ -2,8 +2,11 @@ name: Release Mailbridge
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,7 +15,7 @@ permissions:
   artifact-metadata: write
 
 concurrency:
-  group: release-mailbridge-${{ github.ref }}
+  group: release-mailbridge
   cancel-in-progress: false
 
 jobs:
@@ -25,13 +28,34 @@ jobs:
       MAILBRIDGE_MODE: read-only
 
     steps:
-      - name: Check out tagged source
+      - name: Authorize privileged release trigger
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || fromJSON(github.run_attempt) > 1
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_ACTOR: ${{ github.triggering_actor }}
+          RELEASE_REF: ${{ github.ref }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          if [ "$RELEASE_ACTOR" != "$REPOSITORY_OWNER" ]; then
+            echo "Manual releases, reruns, and release-tag pushes may only be run by the repository owner."
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$RELEASE_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "Manual releases must be dispatched from the protected default branch."
+            exit 1
+          fi
+
+      - name: Check out release source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
+          # Keep queued runs and reruns on the exact commit that triggered them.
+          ref: ${{ github.sha }}
 
       - name: Verify signed annotated tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -55,32 +79,68 @@ jobs:
       - name: Verify release tag and versions
         id: release_metadata
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
         run: |
           node --input-type=module --eval '
             import { appendFileSync, readFileSync } from "node:fs";
             const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
             const root = readJson("package.json");
             const pkg = readJson("plugins/mailbridge-mcp/package.json");
-            const plugin = readJson("plugins/mailbridge-mcp/.codex-plugin/plugin.json");
+            const codex = readJson("plugins/mailbridge-mcp/.codex-plugin/plugin.json");
+            const claude = readJson("plugins/mailbridge-mcp/.claude-plugin/plugin.json");
             const expectedTag = `v${pkg.version}`;
-            if (process.env.RELEASE_TAG !== expectedTag) throw new Error(`expected tag ${expectedTag}`);
-            if (root.version !== pkg.version || plugin.version !== pkg.version) throw new Error("release versions differ");
+            if (process.env.EVENT_TAG && process.env.EVENT_TAG !== expectedTag) throw new Error(`expected tag ${expectedTag}`);
+            if (root.version !== pkg.version || codex.version !== pkg.version || claude.version !== pkg.version) {
+              throw new Error("release versions differ");
+            }
             appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `tag=${expectedTag}\n`);
           '
 
+      - name: Inspect release target
+        id: release_target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
+        run: |
+          RELEASE_STATE=""
+          if RELEASE_STATE=$(gh release view "$RELEASE_TAG" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
+            if [ "$RELEASE_STATE" = "published" ]; then
+              echo "Release $RELEASE_TAG is already published; nothing to do."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          TAG_EXISTS=false
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            TAG_EXISTS=true
+            if [ "$(git rev-list -n 1 "$RELEASE_TAG")" != "$(git rev-parse HEAD)" ]; then
+              echo "Existing immutable tag $RELEASE_TAG does not point to the checked release commit."
+              exit 1
+            fi
+          fi
+
+          echo "release_exists=$([ "$RELEASE_STATE" = "draft" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$TAG_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
       - name: Install locked workspace dependencies
+        if: steps.release_target.outputs.should_release == 'true'
         run: npm ci
 
       - name: Run workspace checks
+        if: steps.release_target.outputs.should_release == 'true'
         run: npm run check
 
       - name: Audit bundled and toolchain dependencies
+        if: steps.release_target.outputs.should_release == 'true'
         # Mailbridge's runtime dependencies are devDependencies bundled into
         # dist/cli.js, so omitting dev dependencies would audit an empty set.
         run: npm audit
 
       - name: Validate Mailbridge JXA and explicit-send boundary
+        if: steps.release_target.outputs.should_release == 'true'
         run: |
           node --check plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
           osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
@@ -92,9 +152,11 @@ jobs:
           ! grep -qE 'mail_send_draft|sendDraft|sendForward' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
 
       - name: Verify committed plugin bundle
+        if: steps.release_target.outputs.should_release == 'true'
         run: git diff --exit-code -- plugins/mailbridge-mcp/dist
 
       - name: Build release artifacts
+        if: steps.release_target.outputs.should_release == 'true'
         run: |
           VERSION=$(node --print "require('./plugins/mailbridge-mcp/package.json').version")
           mkdir -p release
@@ -104,31 +166,64 @@ jobs:
           shasum -a 256 "mailbridge-mcp-${VERSION}.tgz" "mailbridge-mcp-${VERSION}.build.cdx.json" > SHA256SUMS
 
       - name: Attest build provenance
+        if: steps.release_target.outputs.should_release == 'true'
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: release/mailbridge-mcp-*.tgz
 
       - name: Attest release SBOM
+        if: steps.release_target.outputs.should_release == 'true'
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: release/mailbridge-mcp-*.tgz
           sbom-path: release/mailbridge-mcp-${{ steps.release_metadata.outputs.version }}.build.cdx.json
 
-      - name: Create draft GitHub release with all assets
+      - name: Create immutable annotated release tag
+        if: steps.release_target.outputs.should_release == 'true' && steps.release_target.outputs.tag_exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
+        run: |
+          TAG_OBJECT_SHA=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f "tag=$RELEASE_TAG" \
+            -f "message=mailbridge-mcp@${{ steps.release_metadata.outputs.version }}" \
+            -f "object=$(git rev-parse HEAD)" \
+            -f "type=commit" \
+            -f "tagger[name]=${GITHUB_ACTOR}" \
+            -f "tagger[email]=${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com" \
+            -f "tagger[date]=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --jq '.sha')
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" \
+            -f "sha=$TAG_OBJECT_SHA"
+
+      - name: Create or refresh draft GitHub release with all assets
+        if: steps.release_target.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
         run: |
           VERSION=$(node --print "require('./plugins/mailbridge-mcp/package.json').version")
-          gh release create "$GITHUB_REF_NAME" \
-            release/mailbridge-mcp-*.tgz \
-            release/mailbridge-mcp-*.build.cdx.json \
-            release/SHA256SUMS \
-            --draft \
-            --verify-tag \
-            --generate-notes \
-            --title "mailbridge-mcp@${VERSION}"
+          if [ "${{ steps.release_target.outputs.release_exists }}" = "true" ]; then
+            gh release upload "$RELEASE_TAG" \
+              release/mailbridge-mcp-*.tgz \
+              release/mailbridge-mcp-*.build.cdx.json \
+              release/SHA256SUMS \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              release/mailbridge-mcp-*.tgz \
+              release/mailbridge-mcp-*.build.cdx.json \
+              release/SHA256SUMS \
+              --draft \
+              --verify-tag \
+              --generate-notes \
+              --title "mailbridge-mcp@${VERSION}"
+          fi
 
       - name: Publish immutable GitHub release
+        if: steps.release_target.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false

@@ -32405,7 +32405,7 @@ var TOOL_DEFINITIONS = [
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.2.1"
+  version: "0.2.2"
 });
 function createMailbridgeServer(bridge, config2) {
   const server = new McpServer(SERVER_INFO, {

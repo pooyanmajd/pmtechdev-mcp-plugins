@@ -9,12 +9,17 @@ const fail = (message) => {
 };
 
 const packageJson = readJson("package.json");
-const plugin = readJson(".codex-plugin/plugin.json");
+const codexPlugin = readJson(".codex-plugin/plugin.json");
+const claudePlugin = readJson(".claude-plugin/plugin.json");
 const mcp = readJson(".mcp.json");
 const serverSource = readFileSync(resolve(root, "src/server/index.ts"), "utf8");
 
-if (packageJson.name !== plugin.name) fail("package and plugin names differ");
-if (packageJson.version !== plugin.version) fail("package and plugin versions differ");
+if (packageJson.name !== codexPlugin.name || packageJson.name !== claudePlugin.name) {
+  fail("package and plugin names differ");
+}
+if (packageJson.version !== codexPlugin.version || packageJson.version !== claudePlugin.version) {
+  fail("package and plugin versions differ");
+}
 if (!serverSource.includes(`version: "${packageJson.version}"`)) {
   fail("MCP server version differs from package version");
 }
@@ -22,6 +27,8 @@ if (!serverSource.includes(`version: "${packageJson.version}"`)) {
 for (const path of [
   "dist/cli.js",
   "runtime/mailbridge.jxa.js",
+  ".claude-plugin/plugin.json",
+  ".codex-plugin/plugin.json",
   "skills/mailbridge/SKILL.md",
   "assets/icon.svg",
   "assets/logo.svg",
@@ -36,6 +43,17 @@ if (registration?.command !== "node" || registration?.args?.[0] !== "./dist/cli.
 }
 if (registration?.env?.MAILBRIDGE_MODE !== "read-only") {
   fail("plugin MCP registration is not read-only by default");
+}
+
+const claudeRegistration = claudePlugin.mcpServers?.mailbridge;
+if (
+  claudeRegistration?.command !== "node" ||
+  claudeRegistration?.args?.[0] !== "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"
+) {
+  fail("Claude plugin MCP registration does not launch the committed bundle");
+}
+if (claudeRegistration?.env?.MAILBRIDGE_MODE !== "read-only") {
+  fail("Claude plugin MCP registration is not read-only by default");
 }
 
 const runtime = readFileSync(resolve(root, "runtime/mailbridge.jxa.js"), "utf8");

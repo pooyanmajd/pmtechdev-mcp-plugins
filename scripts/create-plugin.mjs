@@ -55,6 +55,16 @@ marketplace.plugins.push({
 });
 await writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`, "utf8");
 
+const claudeMarketplacePath = resolve(root, ".claude-plugin/marketplace.json");
+const claudeMarketplace = JSON.parse(await readFile(claudeMarketplacePath, "utf8"));
+claudeMarketplace.plugins.push({
+  name: normalizedName,
+  source: `./plugins/${normalizedName}`,
+  category: "Developer Tools",
+  tags: ["mcp", "pmtechdev"]
+});
+await writeFile(claudeMarketplacePath, `${JSON.stringify(claudeMarketplace, null, 2)}\n`, "utf8");
+
 process.stdout.write(
   [
     `Created plugins/${normalizedName}`,

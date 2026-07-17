@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-17
+
+### Added
+
+- Account-first targeted-search guidance, configurable search budgets, explicit stop diagnostics, and authenticated continuation cursors.
+- Normalized exact-subject matching with a guarded case-invariant Mail-native reference prefilter and indexed fallback.
+- Native Claude Code plugin and marketplace manifests that launch the committed MCP bundle in read-only mode.
+- Protected-main automatic releases plus an owner-only manual workflow path for safe one-click release retries.
+
+### Fixed
+
+- Large mailbox selections now return bounded partial coverage instead of refusing searches above the cursor mailbox cap.
+- Mixed-case subjects and out-of-order timestamps can no longer produce false complete-search claims.
+
 ### Documentation
 
 - Clarified supported Codex plugin surfaces, prebuilt installation requirements, and the current marketplace command.
@@ -64,7 +78,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...v0.1.2

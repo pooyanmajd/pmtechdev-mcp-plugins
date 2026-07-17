@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "mailbridge-mcp",
+  "displayName": "Mailbridge MCP",
+  "version": "0.2.2",
+  "description": "Safely search, read, draft, and explicitly send mail through accounts configured in macOS Mail.",
+  "author": {
+    "name": "PMTechDev",
+    "url": "https://github.com/pooyanmajd"
+  },
+  "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp#readme",
+  "repository": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins",
+  "license": "MIT",
+  "keywords": ["apple-mail", "email", "macos", "mcp", "productivity"],
+  "mcpServers": {
+    "mailbridge": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js"],
+      "env": {
+        "MAILBRIDGE_MODE": "read-only"
+      }
+    }
+  }
+}
