@@ -44,8 +44,10 @@ jobs:
       - name: Run coverage, metadata, and packaged-plugin checks
         run: npm run check
 
-      - name: Audit published dependency surface
-        run: npm audit --omit=dev
+      - name: Audit bundled and toolchain dependencies
+        # All runtime dependencies are declared as devDependencies and compiled
+        # into dist/cli.js, so an --omit=dev audit would inspect an empty set.
+        run: npm audit
 
       - name: Validate Mailbridge JXA
         run: node --check plugins/mailbridge-mcp/runtime/mailbridge.jxa.js && osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" plugins/mailbridge-mcp/runtime/mailbridge.jxa.js

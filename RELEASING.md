@@ -12,7 +12,7 @@ Repository administration must keep release immutability enabled and an active `
    ```bash
    npm ci
    npm run check
-   npm audit --omit=dev
+   npm audit
    ```
 
 3. Inspect the packaged-plugin smoke result and committed `dist/` diff. Confirm the installed executable completed MCP initialization and `tools/list` without invoking Mail, and that the fixed dispatcher and bundle still contain no send surface.

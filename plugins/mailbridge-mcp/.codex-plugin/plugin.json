@@ -1,6 +1,6 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Safely search, read, and draft mail through accounts configured in macOS Mail.",
   "author": {
     "name": "PMTechDev",

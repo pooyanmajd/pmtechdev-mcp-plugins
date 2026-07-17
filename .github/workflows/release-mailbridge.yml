@@ -73,8 +73,10 @@ jobs:
       - name: Run workspace checks
         run: npm run check
 
-      - name: Audit published dependency surface
-        run: npm audit --omit=dev
+      - name: Audit bundled and toolchain dependencies
+        # Mailbridge's runtime dependencies are devDependencies bundled into
+        # dist/cli.js, so omitting dev dependencies would audit an empty set.
+        run: npm audit
 
       - name: Validate Mailbridge JXA and no-send boundary
         run: |

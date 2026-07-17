@@ -194,11 +194,39 @@ function resolveMailbox(locator, policy) {
   return { account: account, mailbox: current, path: locator.path.slice(0) };
 }
 
+function directMessageLookup(mailbox, key) {
+  // Mail exposes messages through by-id specifiers, so one Apple Event can
+  // resolve a message without scanning the mailbox. The candidate identity is
+  // re-verified, and any failure falls back to the bounded indexed scan.
+  if (!/^\d{1,18}$/.test(key)) return null;
+  try {
+    var collection = mailbox.messages;
+    if (collection === null || collection === undefined || typeof collection.byId !== "function") {
+      return null;
+    }
+    var candidate = collection.byId(Number(key));
+    if (candidate === null || candidate === undefined) return null;
+    var identity = collectionItemIdentity(candidate);
+    return identity.status === "item" && identity.value === key ? candidate : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function resolveMessage(locator, policy) {
   requireObject(locator, "message identifier");
   var resolved = resolveMailbox(locator, policy);
   var key = asString(locator.messageKey, "");
   if (!key) fail("INVALID_ID", "The supplied message identifier is invalid.");
+  var direct = directMessageLookup(resolved.mailbox, key);
+  if (direct) {
+    return {
+      account: resolved.account,
+      mailbox: resolved.mailbox,
+      path: resolved.path,
+      message: direct,
+    };
+  }
   for (var index = 0; index < MAX_MESSAGES_SCANNED; index += 1) {
     var access = collectionItem(resolved.mailbox, "messages", index);
     if (access.status === "end") {
