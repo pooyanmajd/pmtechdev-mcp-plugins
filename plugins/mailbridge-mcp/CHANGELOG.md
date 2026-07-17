@@ -4,6 +4,8 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-17
+
 ### Changed
 
 - Message resolution now tries Mail's by-id specifier first and keeps the bounded indexed scan as fallback, so single and batch reads in large mailboxes no longer rescan the message collection.
@@ -38,6 +40,7 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0
