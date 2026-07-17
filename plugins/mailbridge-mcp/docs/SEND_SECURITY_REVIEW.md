@@ -59,13 +59,6 @@ Deterministic tests cover configuration fail-closed behavior, legacy-mode non-es
 
 The capability is acceptable only with the controls above kept together. Adding draft, forward, attachment, or bulk sending—or weakening the prompted confirmation or allowlisted direct-send paths—requires a new design and security review.
 
-## Addendum: local access-preferences tools and the automation-queue fix
+## Addendum: local access-preferences tools
 
-Two additions land alongside a local, per-user access-preferences file (`src/local-config.ts`): the `mailbridge_get_access_preferences`/`mailbridge_set_access_preferences` tools, and a fix moving automation-queue acquisition off the prompted-mode elicitation wait. Neither changes the authorization model reviewed above:
-
-- The local file is a new *configuration source*, not a new *authority*. It feeds `MAILBRIDGE_MODE`/`MAILBRIDGE_ALLOWED_ACCOUNTS` through the same unmodified `loadConfig` validation (gate 1's `full`-cannot-send rule, gate 3's non-empty-allowlist rule) and the same runtime mode/allowlist enforcement in `service.ts`/`bridge.ts`/the JXA runtime. An explicitly set environment variable — including the marketplace manifests' fixed `MAILBRIDGE_MODE=prompted` — still always wins over a saved local value. No per-account send granularity was introduced; the saved mode still applies to the whole server, exactly as an environment-variable-configured mode does today.
-- `mailbridge_set_access_preferences` requires literal `confirmed: true`, mirroring gate 4/5's existing pattern for `mail_send_message`/`mail_send_reply`: guidance requires the exact proposed mode and account list to be shown and approved in chat before that flag is set. It does not depend on MCP client elicitation support.
-- Saving preferences never affects the currently running process — `MailbridgeConfig` is still resolved once at startup — so a compromised host cannot use this tool to grant itself a capability the current session doesn't already have; at most it can persist a future session's starting mode, which a fresh gate-1 mode check still enforces on every subsequent send.
-- The automation-queue fix (`service.ts`'s `invoke()` no longer wraps the entire tool dispatch, including the elicitation wait, in the bounded queue) is a liveness/availability fix, not an authorization change: `confirmPromptedSend` still gates every send identically, just without incidentally starving unrelated calls while a confirmation is pending.
-
-This addendum does not, by itself, change the review conclusion above.
+`mailbridge_get_access_preferences`/`mailbridge_set_access_preferences` and their backing local file (`src/local-config.ts`) are a new *configuration source*, not a new *authority*: they feed the same unmodified `loadConfig` validation and runtime enforcement above, an explicit environment variable still always wins, and `mailbridge_set_access_preferences` requires the same shown-and-approved-then-`confirmed: true` pattern as the send tools, independent of MCP elicitation. Saving preferences never affects the currently running process. Does not change the review conclusion.
