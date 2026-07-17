@@ -25,9 +25,14 @@ class FakeRunner implements AutomationRunner {
   }
 }
 
-function makeBridge(runner: AutomationRunner, allowedAccounts: string[] = []): AppleMailBridge {
+function makeBridge(
+  runner: AutomationRunner,
+  allowedAccounts: string[] = [],
+  promptedSend = false,
+): AppleMailBridge {
   return new AppleMailBridge({
     allowedAccounts,
+    promptedSend,
     maxBodyChars: 1_000,
     maxAttachmentBytes: 1_024,
     maxResults: 50,
@@ -64,6 +69,7 @@ describe("AppleMailBridge", () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]?.emailAddresses).toEqual(["allowed@example.com"]);
     expect(runner.requests[0]?.policy.allowedAccounts).toEqual(["allowed@example.com"]);
+    expect(runner.requests[0]?.policy.promptedSend).toBe(false);
     expect(runner.requests[0]?.policy.searchTimeBudgetMs).toBe(80);
   });
 
@@ -490,6 +496,32 @@ describe("AppleMailBridge", () => {
     ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
 
     expect(runner.requests).toHaveLength(0);
+  });
+
+  it("allows a confirmed send without an allowlist only for prompted authorization", async () => {
+    const runner = new FakeRunner();
+    runner.enqueue({
+      accountKey: "account-1",
+      sender: "sender@example.com",
+      subject: "Approved subject",
+      recipients: { to: [{ address: "to@example.com" }], cc: [], bcc: [] },
+      acceptedForSending: true,
+    });
+    const bridge = makeBridge(runner, [], true);
+
+    await bridge.sendMessage({
+      accountId: encodeMailId("account", ACCOUNT_LOCATOR),
+      from: "sender@example.com",
+      to: ["to@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    });
+
+    expect(runner.requests[0]?.policy).toMatchObject({
+      allowedAccounts: [],
+      promptedSend: true,
+    });
   });
 
   it("rejects empty recipient lists and invalid state types before automation", async () => {

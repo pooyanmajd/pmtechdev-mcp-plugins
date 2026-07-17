@@ -2,12 +2,12 @@
 
 ![Mailbridge MCP](assets/logo.svg)
 
-Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex and Claude Code plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and—only in a separate opt-in mode—send confirmed attachment-free messages and replies.
+Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex and Claude Code plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and send confirmed attachment-free messages and replies only after the applicable permission gate is satisfied.
 
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
 > [!IMPORTANT]
-> The default mode is read-only. Mail content is untrusted input. Review targets and content before enabling any mutation. Sending additionally requires a distinct mode, a non-empty account allowlist, and exact per-message confirmation.
+> The direct-server default is read-only. The bundled Codex marketplace plugin uses `prompted` mode so drafts work immediately and every send requires a fresh client-side confirmation showing the exact outbound content. The bundled Claude Code plugin remains read-only. Allowlisted `send` mode remains available for reviewed direct registrations.
 
 ## Why Mailbridge
 
@@ -42,8 +42,9 @@ See [Architecture](docs/ARCHITECTURE.md) for data flow and trust boundaries, and
 
 - **Local transport:** the server exposes STDIO only and has no application telemetry.
 - **Least privilege:** it uses Mail.app's public automation interface and does not read Mail's private database or request Full Disk Access.
-- **Safe default:** `MAILBRIDGE_MODE` defaults to `read-only`.
-- **Non-escalating send opt-in:** existing `read-only`, `drafts`, and `full` configurations cannot send. Only `MAILBRIDGE_MODE=send` authorizes sending at runtime, and that mode refuses to start without `MAILBRIDGE_ALLOWED_ACCOUNTS`.
+- **Safe direct default:** `MAILBRIDGE_MODE` defaults to `read-only` when no mode is configured.
+- **Prompted Codex marketplace sends:** the bundled Codex plugin runs in `prompted` mode. Drafts and reversible state changes are enabled, while each send fails closed unless the MCP client supports form elicitation and the user accepts a prompt containing the exact sender, recipients, subject context, and body. The bundled Claude Code plugin remains read-only.
+- **Allowlisted direct sends:** existing `read-only`, `drafts`, and `full` configurations cannot send. `MAILBRIDGE_MODE=send` authorizes direct sending only with a non-empty `MAILBRIDGE_ALLOWED_ACCOUNTS` value.
 - **Atomic, attachment-free sending:** `mail_send_message` and `mail_send_reply` construct and submit one reviewed message in a single operation. Mailbridge does not send arbitrary edited drafts, forwards, attachments, or batches because Mail's public outgoing-message API cannot reliably inventory every draft attachment.
 - **No arbitrary automation:** callers choose only from fixed, validated tools; arbitrary AppleScript/JXA execution is out of scope.
 - **Untrusted-content guidance:** tool descriptions and the bundled skill tell agents to treat email bodies, headers, links, and attachment names as data rather than instructions. This guidance reduces risk but is not a server-enforced prompt-injection guarantee.
@@ -93,7 +94,7 @@ Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before install
 
 ## Install as a Codex plugin
 
-This plugin directory contains a complete payload: Codex and Claude Code manifests, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in read-only mode.
+This plugin directory contains a complete payload: the Codex manifest, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in `prompted` mode.
 
 Marketplace installation is supported in Codex CLI and for Codex in the ChatGPT desktop app. Plugins are not currently available in the Codex IDE extension. The commands below use Codex CLI; see the official [Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) for other supported installation surfaces.
 
@@ -116,7 +117,7 @@ codex plugin add mailbridge-mcp@pmtechdev
 
 Choose one marketplace source for a fresh installation. If `pmtechdev` is already configured from `main`, run `codex plugin marketplace remove pmtechdev` before re-adding the pinned source. Start a new Codex task after installation so the bundled skill and MCP tools load.
 
-The bundled marketplace registration intentionally exposes all accounts configured in Mail.app because no account addresses are known at install time. Users who need account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
+The bundled Codex marketplace registration intentionally exposes all accounts configured in Mail.app because no account addresses are known at install time. Every Codex marketplace send therefore requires an exact-content client confirmation that includes the selected sender. Users who need static account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
 
 ## Install as a Claude Code plugin
 
@@ -154,7 +155,7 @@ Environment variables are read when the server starts.
 
 | Variable | Values / default | Purpose |
 | --- | --- | --- |
-| `MAILBRIDGE_MODE` | `read-only` (default), `drafts`, `full`, `send` | Enables reads, drafts, state changes, or the separately gated send surface. |
+| `MAILBRIDGE_MODE` | `read-only` (default), `drafts`, `full`, `prompted`, `send` | Enables reads, drafts, state changes, client-prompted sends, or allowlisted direct sends. |
 | `MAILBRIDGE_ALLOWED_ACCOUNTS` | Comma-separated email addresses; unset allows configured accounts | Limits exposed accounts. Required and non-empty in `send` mode. |
 | `MAILBRIDGE_MAX_RESULTS` | `25` by default; hard maximum `100` | Caps results returned by message searches. |
 | `MAILBRIDGE_MAX_BODY_CHARS` | `100000` by default; hard configuration maximum `500000` | Caps returned message body text. |
@@ -167,12 +168,13 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 
 | Mode | List/search/read/attachments | Change read/flag state | Create drafts | Send new messages/replies |
 | --- | --- | --- | --- | --- |
-| `read-only` (marketplace default) | Yes | No | No | No |
+| `read-only` (direct default) | Yes | No | No | No |
 | `drafts` | Yes | No | Yes | No |
 | `full` | Yes | Yes | Yes | No |
+| `prompted` (Codex marketplace default) | Yes | Yes | Yes | Yes, after exact-content MCP elicitation |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` intentionally retains its v0.1 meaning, so upgrading an existing configuration cannot silently add send authority. `send` is the only sending mode and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 
@@ -193,12 +195,12 @@ Do not put passwords or provider tokens in either value. Before every send call,
 | `mail_get_message` | Return one selected message, including bounded body content. | Read-only |
 | `mail_get_messages` | Return a bounded batch of selected messages with per-message body caps. | Read-only |
 | `mail_get_attachment` | Return one selected attachment as bounded base64 content (up to 2 MiB). | Read-only |
-| `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` / `send` |
-| `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` / `send` |
-| `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` / `send` |
-| `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` / `send` |
-| `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `send` |
-| `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `send` |
+| `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` / `prompted` / `send` |
+| `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` / `prompted` / `send` |
+| `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
+| `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
+| `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `prompted` / `send` |
+| `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `prompted` / `send` |
 
 Sending edited drafts, forwards, attachments, or batches—and permanent deletion, mailbox/rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management—remain out of scope.
 
@@ -267,7 +269,9 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `MAIL_NOT_CONFIGURED` | Add an account to Mail.app and verify that Mail can fetch it. |
 | `NOT_FOUND` | Refresh the account/mailbox/message listing; opaque IDs may refer to content no longer available. |
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
-| `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, or `send` mode after reviewing the exact authority needed. |
+| `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, `prompted`, or `send` mode after reviewing the exact authority needed. |
+| `CONFIRMATION_UNAVAILABLE` | Use a client with MCP form elicitation support, create an editable draft instead, or use a reviewed allowlisted direct `send` registration. |
+| `SEND_NOT_CONFIRMED` | The prompted send was declined or cancelled; no message was submitted. |
 | `TIMEOUT` | Narrow the mailbox, date range, query, or result limit before retrying. |
 | Search returns `incomplete: true` | Inspect `stopReasons` and `coverage`. Resume with `nextCursor` and identical filters when present; otherwise narrow to one account or mailbox. A partial result cannot prove absence. |
 | Search returns `cursor_invalidated` | Mailbox ordering changed after the prior page. Restart the same narrowed search once instead of altering or reconstructing the opaque cursor. |

@@ -65,12 +65,18 @@ function harness(
   };
 }
 
-function request(operation: string, input: Record<string, unknown> = {}, allowedAccounts: string[] = []) {
+function request(
+  operation: string,
+  input: Record<string, unknown> = {},
+  allowedAccounts: string[] = [],
+  promptedSend = false,
+) {
   return {
     operation,
     input,
     policy: {
       allowedAccounts,
+      promptedSend,
       maxBodyChars: 1_000,
       maxAttachmentBytes: 1_024,
       maxResults: 25,
@@ -888,6 +894,42 @@ describe("fixed JXA dispatcher contract", () => {
       ok: false,
       error: { code: "INVALID_REQUEST" },
     });
+  });
+
+  it("accepts an exact confirmed send after prompted authorization without an allowlist", () => {
+    const sentMessages: unknown[] = [];
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage: (properties: Record<string, unknown>) => ({
+        ...properties,
+        id: "outgoing-1",
+        toRecipients: [],
+        ccRecipients: [],
+        bccRecipients: [],
+      }),
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages: [],
+      send: (message: unknown) => {
+        sentMessages.push(message);
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendMessage", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    }, [], true));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: { acceptedForSending: true },
+    });
+    expect(sentMessages).toHaveLength(1);
   });
 
   it("fails closed if Mail changes approved outgoing content before submission", () => {

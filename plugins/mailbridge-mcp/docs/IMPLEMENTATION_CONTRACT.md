@@ -46,9 +46,9 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 
 ## Configuration
 
-- `MAILBRIDGE_MODE=read-only|drafts|full|send` (default `read-only`)
-- `full` retains its historical non-send behavior. Only `send` enables `mail_send_message` and `mail_send_reply`.
-- `MAILBRIDGE_ALLOWED_ACCOUNTS` optionally limits account email addresses (comma-separated) and is mandatory in `send` mode.
+- `MAILBRIDGE_MODE=read-only|drafts|full|prompted|send` (direct default `read-only`; bundled marketplace mode `prompted`)
+- `full` retains its historical non-send behavior. `prompted` enables sends only after exact-content MCP form elicitation; `send` enables reviewed direct sends.
+- `MAILBRIDGE_ALLOWED_ACCOUNTS` optionally limits account email addresses (comma-separated) and is mandatory in direct `send` mode. Prompted mode instead requires a fresh client confirmation for every send.
 - `MAILBRIDGE_MAX_RESULTS` caps search results (hard maximum 100)
 - `MAILBRIDGE_MAX_BODY_CHARS` caps returned message text
 - `MAILBRIDGE_TIMEOUT_MS` caps every automation subprocess
@@ -61,7 +61,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 
 ## Error model
 
-Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
+Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `CONFIRMATION_UNAVAILABLE`, `SEND_NOT_CONFIRMED`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
 
 ## Packaging
 

@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { MailbridgeConfig } from "../../src/config.js";
@@ -81,6 +82,43 @@ describe("MCP server", () => {
       ok: true,
       data: [{ id: "account:1", email: "person@example.com" }],
     });
+  });
+
+  it("elicits exact-content approval before sending in prompted mode", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    const client = new Client(
+      { name: "mailbridge-test", version: "1.0.0" },
+      { capabilities: { elicitation: { form: {} } } },
+    );
+    let prompt = "";
+    client.setRequestHandler(ElicitRequestSchema, (request) => {
+      if (request.params.mode !== "form") throw new Error("Expected form elicitation.");
+      prompt = request.params.message;
+      return Promise.resolve({ action: "accept" as const, content: { approve: true } });
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+
+    const result = await client.callTool({
+      name: "mail_send_message",
+      arguments: {
+        accountId: "account:1",
+        from: "sender@example.com",
+        to: ["recipient@example.com"],
+        subject: "Reviewed subject",
+        body: "Reviewed body",
+        confirmed: true,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(prompt).toContain("From: sender@example.com");
+    expect(prompt).toContain("To: recipient@example.com");
+    expect(prompt).toContain("Subject: Reviewed subject");
+    expect(prompt).toContain("--- BEGIN EXACT BODY ---\nReviewed body\n--- END EXACT BODY ---");
+    expect(spies.sendMessage).toHaveBeenCalledOnce();
   });
 
 });

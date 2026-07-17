@@ -243,6 +243,7 @@ export interface MailBridge {
 
 export interface AppleMailBridgeOptions {
   allowedAccounts?: string[];
+  promptedSend?: boolean;
   maxBodyChars: number;
   timeoutMs: number;
   searchBudgetMs?: number;
@@ -453,6 +454,7 @@ function mapAttachment(raw: RawAttachment): AttachmentMetadata {
 /** Typed Mail.app adapter. The injected runner makes all bridge behavior unit-testable. */
 export class AppleMailBridge implements MailBridge {
   readonly allowedAccounts: string[];
+  readonly promptedSend: boolean;
   readonly maxBodyChars: number;
   readonly maxResults: number;
   readonly maxAttachmentBytes: number;
@@ -462,6 +464,7 @@ export class AppleMailBridge implements MailBridge {
 
   constructor(options: AppleMailBridgeOptions) {
     this.allowedAccounts = [...new Set((options.allowedAccounts ?? []).map((item) => normalizedEmail(item)))];
+    this.promptedSend = options.promptedSend ?? false;
     this.maxBodyChars = boundedInteger(options.maxBodyChars, "maxBodyChars", 1, HARD_MAX_BODY_CHARS);
     this.maxResults = boundedInteger(options.maxResults ?? HARD_MAX_RESULTS, "maxResults", 1, HARD_MAX_RESULTS);
     this.maxAttachmentBytes = boundedInteger(
@@ -487,6 +490,7 @@ export class AppleMailBridge implements MailBridge {
       input,
       policy: {
         allowedAccounts: this.allowedAccounts,
+        promptedSend: this.promptedSend,
         maxBodyChars: this.maxBodyChars,
         maxAttachmentBytes: this.maxAttachmentBytes,
         maxResults: this.maxResults,
@@ -714,7 +718,7 @@ export class AppleMailBridge implements MailBridge {
     if (input.confirmed !== true) {
       throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
     }
-    if (this.allowedAccounts.length === 0) {
+    if (this.allowedAccounts.length === 0 && !this.promptedSend) {
       throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
     }
     const account = decodeMailId("account", input.accountId);
@@ -740,7 +744,7 @@ export class AppleMailBridge implements MailBridge {
     if (input.confirmed !== true) {
       throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
     }
-    if (this.allowedAccounts.length === 0) {
+    if (this.allowedAccounts.length === 0 && !this.promptedSend) {
       throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
     }
     const message = decodeMailId("message", input.messageId);

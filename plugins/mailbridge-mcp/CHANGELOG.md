@@ -4,6 +4,14 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- The bundled Codex plugin now starts in `prompted` mode, allowing draft creation and requiring a fresh exact-content client confirmation before every send.
+
+### Security
+
+- Preserved the reviewed allowlisted `send` mode for direct registrations while adding fail-closed errors for unavailable or declined prompted confirmations.
+
 ## [0.2.2] - 2026-07-17
 
 ### Added

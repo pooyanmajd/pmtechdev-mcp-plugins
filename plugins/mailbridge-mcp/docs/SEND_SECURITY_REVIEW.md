@@ -9,6 +9,8 @@ Mailbridge 0.2 adds two single-message operations:
 
 Both operations are attachment-free and atomic at the Mailbridge dispatcher boundary. Mailbridge still cannot send an existing editable draft, a forward, an attachment, or a batch.
 
+The marketplace configuration uses `MAILBRIDGE_MODE=prompted`. In that mode, every send request pauses for MCP form elicitation that shows the exact outbound content and requires the user to accept before Mailbridge enters the send path. The established `send` mode remains available for reviewed direct registrations that use a static account allowlist.
+
 ## Why the boundary is narrow
 
 Mail.app's public scripting dictionary exposes a `send` command for an outgoing message, but its outgoing-message class does not expose a complete, stable attachment inventory. Mailbridge therefore cannot prove that an arbitrary draft still matches a prior approval after a user, plugin, or Mail.app edit. Sending such a draft would turn an opaque draft ID into authority over unreviewed content.
@@ -19,11 +21,11 @@ The accepted design constructs the outgoing object from validated input and call
 
 All gates must pass:
 
-1. `MAILBRIDGE_MODE=send`. The historical `full` mode remains unable to send, preventing a privilege increase on upgrade.
-2. `MAILBRIDGE_ALLOWED_ACCOUNTS` is non-empty. Configuration refuses to start in send mode without it.
-3. The selected `from` address belongs to the allowlist and the resolved Mail account.
+1. The mode is either `prompted` or `send`. The historical `full` mode remains unable to send, preventing a privilege increase on upgrade.
+2. In prompted mode, the connected MCP client supports form elicitation and the user accepts a fresh confirmation containing the exact sender, To/CC/BCC recipients, subject context, reply-all state where relevant, and complete body. If elicitation is unavailable, declined, cancelled, or fails, Mailbridge never reaches Mail's send operation.
+3. In direct send mode, `MAILBRIDGE_ALLOWED_ACCOUNTS` is non-empty; configuration refuses to start without it, and the selected `from` address belongs to that allowlist and the resolved Mail account.
 4. The request contains bounded recipients, a substantive body, and literal `confirmed: true`. Mailbridge reads the constructed outgoing subject/body back before submission and refuses changed content. Replies additionally carry the exact expected recipient sets, checked immediately before submission.
-5. Agent guidance requires the exact sender, To/CC/BCC recipients, subject, reply-all state, and complete body to be shown and explicitly approved before `confirmed` is set.
+5. Agent guidance requires the exact sender, To/CC/BCC recipients, subject, reply-all state, and complete body to be shown and explicitly approved before `confirmed` is set. Prompted mode adds a server-mediated confirmation; it does not replace this review requirement.
 
 The runtime can enforce structural confirmation but cannot prove human comprehension. A compromised or over-privileged MCP host remains outside the containment claim and is disclosed as a trust boundary.
 
@@ -31,9 +33,9 @@ The runtime can enforce structural confirmation but cannot prove human comprehen
 
 | Threat | Control | Residual risk |
 | --- | --- | --- |
-| Existing installations gain send authority on upgrade | Only the new `send` mode enables sending; `full` remains non-send | An administrator can deliberately change the mode |
-| Wrong account or reply target sends the message | Mandatory address allowlist, opaque account ID, account/address resolution, ambiguity failure, exact expected-recipient comparison immediately before reply submission | Mail.app account configuration can change between calls |
-| Prompt-injected email triggers a send | Message content is untrusted; send tools require separate exact-content approval and confirmation | A compromised host or policy-ignoring agent can misuse granted authority |
+| Existing installations gain silent send authority on upgrade | Marketplace prompted mode requires a new per-send client confirmation; `full` remains non-send | A user who accepts a prompt can still authorize the selected send |
+| Wrong account or reply target sends the message | Prompted mode shows the exact sender and recipients immediately before send; direct mode uses an address allowlist; both use opaque IDs, account/address resolution, ambiguity failure, and exact expected-recipient comparison immediately before reply submission | Mail.app account configuration can change between calls |
+| Prompt-injected email triggers a send | Message content is untrusted; agents must obtain prior exact-content approval and prompted mode shows a second confirmation with the body explicitly labeled as untrusted | A compromised host can lie about or suppress client-side review |
 | Content changes after approval | No send-draft operation; outgoing object is built atomically and its subject/body are read back before submission | Mail.app/provider processing after acceptance is outside the boundary |
 | Hidden attachment or unreviewed quote is transmitted | New-message input has no attachment field; reply content is replaced with the approved body; forward and draft sending are absent | Mail.app's internal reply behavior is platform-owned and covered by compatibility testing |
 | Duplicate send after timeout | Send tools are non-idempotent; ambiguous failures map to `MUTATION_OUTCOME_UNKNOWN`; guidance forbids blind retry | The user may still choose to resend after inspection |
@@ -51,8 +53,8 @@ The runtime can enforce structural confirmation but cannot prove human comprehen
 
 ## Verification evidence
 
-Deterministic tests cover configuration fail-closed behavior, legacy-mode non-escalation, schemas and annotations, bridge request mapping, fixed-dispatcher confirmation and allowlist checks, successful new-message and reply submission, ambiguous outcome handling, and absence of draft/forward/bulk send operations. CI and release verification compile the JXA source and never automate a real mailbox or send real mail.
+Deterministic tests cover configuration fail-closed behavior, legacy-mode non-escalation, prompted confirmation acceptance, decline and unavailable-client failures, schemas and annotations, bridge request mapping, fixed-dispatcher prompted and allowlisted send checks, successful new-message and reply submission, ambiguous outcome handling, and absence of draft/forward/bulk send operations. CI and release verification compile the JXA source and never automate a real mailbox or send real mail.
 
 ## Review conclusion
 
-The capability is acceptable only with the controls above kept together. Adding draft, forward, attachment, or bulk sending—or enabling send from an existing mode—requires a new design and security review.
+The capability is acceptable only with the controls above kept together. Adding draft, forward, attachment, or bulk sending—or weakening the prompted confirmation or allowlisted direct-send paths—requires a new design and security review.

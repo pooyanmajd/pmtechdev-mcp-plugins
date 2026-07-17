@@ -4,7 +4,7 @@ import {
   maximumSearchTimeBudgetMs,
 } from "./search-budget.js";
 
-export const MAILBRIDGE_MODES = ["read-only", "drafts", "full", "send"] as const;
+export const MAILBRIDGE_MODES = ["read-only", "drafts", "full", "prompted", "send"] as const;
 
 export type MailbridgeMode = (typeof MAILBRIDGE_MODES)[number];
 
@@ -50,7 +50,7 @@ function parseMode(value: string | undefined): MailbridgeMode {
     return value as MailbridgeMode;
   }
 
-  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, full, or send.");
+  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, full, prompted, or send.");
 }
 
 function parsePositiveInteger(

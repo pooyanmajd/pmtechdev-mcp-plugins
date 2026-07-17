@@ -47,6 +47,13 @@ describe("loadConfig", () => {
     ).toBe("send");
   });
 
+  it("allows prompted mode without a static account allowlist", () => {
+    expect(loadConfig({ MAILBRIDGE_MODE: "prompted" })).toMatchObject({
+      mode: "prompted",
+      allowedAccounts: undefined,
+    });
+  });
+
   it.each([
     [{ MAILBRIDGE_MODE: "write" }, "MAILBRIDGE_MODE"],
     [{ MAILBRIDGE_MAX_RESULTS: "0" }, "MAILBRIDGE_MAX_RESULTS"],

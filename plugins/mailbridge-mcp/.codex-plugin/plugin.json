@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "Mailbridge MCP",
     "shortDescription": "Connect Codex safely to macOS Mail.",
-    "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, draft workflows, and opt-in confirmed sending.",
+    "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, draft workflows, and per-send confirmation for outbound mail.",
     "developerName": "PMTechDev",
     "category": "Productivity",
     "capabilities": ["Search", "Read", "Draft", "Send"],

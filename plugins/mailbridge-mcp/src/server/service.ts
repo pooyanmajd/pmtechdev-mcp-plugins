@@ -24,6 +24,29 @@ import {
 type StructuredJson = Record<string, unknown>;
 const MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 
+export type MailSendConfirmation =
+  | {
+      readonly kind: "message";
+      readonly from: string;
+      readonly to: readonly string[];
+      readonly cc: readonly string[];
+      readonly bcc: readonly string[];
+      readonly subject: string;
+      readonly body: string;
+    }
+  | {
+      readonly kind: "reply";
+      readonly from: string;
+      readonly to: readonly string[];
+      readonly cc: readonly string[];
+      readonly bcc: readonly string[];
+      readonly sourceSubject: string;
+      readonly replyAll: boolean;
+      readonly body: string;
+    };
+
+export type ConfirmMailSend = (confirmation: MailSendConfirmation) => Promise<boolean>;
+
 function success(data: unknown): CallToolResult {
   const structuredContent: StructuredJson = { ok: true, data };
   return {
@@ -63,6 +86,7 @@ export class MailbridgeToolService {
   public constructor(
     private readonly bridge: MailBridge,
     private readonly config: MailbridgeConfig,
+    private readonly confirmMailSend?: ConfirmMailSend,
   ) {}
 
   public async invoke(name: ToolName, rawInput: unknown): Promise<CallToolResult> {
@@ -83,14 +107,30 @@ export class MailbridgeToolService {
   }
 
   private requireFullMode(): void {
-    if (this.config.mode !== "full" && this.config.mode !== "send") {
+    if (this.config.mode !== "full" && this.config.mode !== "prompted" && this.config.mode !== "send") {
       throw new MailbridgeError("READ_ONLY");
     }
   }
 
-  private requireSendMode(): void {
-    if (this.config.mode !== "send") {
-      throw new MailbridgeError("READ_ONLY");
+  private sendAuthorization(): "allowlisted" | "prompted" {
+    if (this.config.mode === "send") return "allowlisted";
+    if (this.config.mode === "prompted") return "prompted";
+    throw new MailbridgeError("READ_ONLY");
+  }
+
+  private async confirmPromptedSend(confirmation: MailSendConfirmation): Promise<void> {
+    if (this.confirmMailSend === undefined) {
+      throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+    }
+
+    let approved: boolean;
+    try {
+      approved = await this.confirmMailSend(confirmation);
+    } catch {
+      throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+    }
+    if (!approved) {
+      throw new MailbridgeError("SEND_NOT_CONFIRMED");
     }
   }
 
@@ -188,13 +228,38 @@ export class MailbridgeToolService {
         return this.runMutation(async () => this.bridge.createForwardDraft(input));
       }
       case "mail_send_message": {
-        this.requireSendMode();
         const input = parseInput(sendMessageInputSchema, rawInput);
+        if (this.sendAuthorization() === "prompted") {
+          await this.confirmPromptedSend({
+            kind: "message",
+            from: input.from,
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            body: input.body,
+          });
+        }
         return this.runMutation(async () => this.bridge.sendMessage(input));
       }
       case "mail_send_reply": {
-        this.requireSendMode();
         const input = parseInput(sendReplyInputSchema, rawInput);
+        if (this.sendAuthorization() === "prompted") {
+          const source = await this.bridge.getMessage({
+            messageId: input.messageId,
+            maxBodyChars: 1,
+          });
+          await this.confirmPromptedSend({
+            kind: "reply",
+            from: input.from,
+            to: input.expectedTo,
+            cc: input.expectedCc,
+            bcc: input.expectedBcc,
+            sourceSubject: source.subject,
+            replyAll: input.replyAll,
+            body: input.body,
+          });
+        }
         return this.runMutation(async () => this.bridge.sendReply(input));
       }
     }

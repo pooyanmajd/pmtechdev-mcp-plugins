@@ -28,6 +28,7 @@ export interface AutomationRequest {
   input: Record<string, unknown>;
   policy: {
     allowedAccounts: string[];
+    promptedSend: boolean;
     maxBodyChars: number;
     maxAttachmentBytes: number;
     maxResults: number;

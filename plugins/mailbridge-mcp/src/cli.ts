@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const bridge = createMailBridge({
     ...(config.allowedAccounts === undefined ? {} : { allowedAccounts: [...config.allowedAccounts] }),
+    promptedSend: config.mode === "prompted",
     maxBodyChars: config.maxBodyChars,
     maxResults: config.maxResults,
     timeoutMs: config.timeoutMs,
