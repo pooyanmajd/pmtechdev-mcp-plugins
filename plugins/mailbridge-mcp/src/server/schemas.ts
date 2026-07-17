@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const OPAQUE_ID_MAX_CHARS = 4_096;
+const SEARCH_CURSOR_MAX_CHARS = 128 * 1024;
 const MAX_QUERY_CHARS = 2_000;
 const MAX_SUBJECT_CHARS = 998;
 const MAX_OUTGOING_BODY_CHARS = 200_000;
@@ -13,6 +14,12 @@ const opaqueId = z
   .trim()
   .min(1, "An opaque identifier is required.")
   .max(OPAQUE_ID_MAX_CHARS, "The opaque identifier is too long.");
+
+const searchCursor = z
+  .string()
+  .trim()
+  .min(1, "A search cursor is required.")
+  .max(SEARCH_CURSOR_MAX_CHARS, "The search cursor is too long.");
 
 const emailAddress = z.string().trim().email().max(320);
 const recipients = z.array(emailAddress).max(MAX_RECIPIENTS_PER_FIELD);
@@ -35,13 +42,19 @@ export const searchMessagesInputSchema = z
     from: z.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
     to: z.string().trim().min(1).max(320).optional().describe("Recipient address or text to match."),
     subject: z.string().trim().min(1).max(MAX_SUBJECT_CHARS).optional().describe("Subject text to match."),
+    subjectMatch: z.enum(["contains", "exact"]).default("contains").describe("Use normalized exact matching for a known complete subject, or substring matching by default."),
     since: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO 8601 received-date lower bound."),
     before: z.string().datetime({ offset: true }).optional().describe("Exclusive ISO 8601 received-date upper bound."),
     unreadOnly: z.boolean().default(false),
     flaggedOnly: z.boolean().default(false),
     limit: z.number().int().min(1).max(100).optional().describe("Maximum results; also capped by server configuration."),
+    cursor: searchCursor.optional().describe("Opaque continuation cursor from an incomplete search using the same filters."),
   })
   .strict()
+  .refine(
+    ({ subject, subjectMatch }) => subject !== undefined || subjectMatch === "contains",
+    { message: "subjectMatch=exact requires subject.", path: ["subjectMatch"] },
+  )
   .refine(
     ({ since, before }) => since === undefined || before === undefined || Date.parse(since) < Date.parse(before),
     { message: "since must be earlier than before.", path: ["before"] },

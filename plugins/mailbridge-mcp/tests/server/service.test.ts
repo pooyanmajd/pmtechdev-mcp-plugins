@@ -12,6 +12,7 @@ function config(mode: MailbridgeMode = "read-only"): MailbridgeConfig {
     maxResults: 10,
     maxBodyChars: 1_000,
     timeoutMs: 5_000,
+    searchBudgetMs: 4_000,
   };
 }
 
@@ -50,7 +51,13 @@ describe("MailbridgeToolService", () => {
     await service.invoke("mail_get_attachment", { attachmentId: "attachment:1", maxBytes: 1024 });
 
     expect(spies.searchMessages).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 10, scope: "inbox", unread: false, flagged: false }),
+      expect.objectContaining({
+        limit: 10,
+        scope: "inbox",
+        subjectMatch: "contains",
+        unread: false,
+        flagged: false,
+      }),
     );
     expect(spies.getMessage).toHaveBeenCalledWith({ messageId: "message:1", maxBodyChars: 1_000 });
     expect(spies.getMessages).toHaveBeenCalledWith({
@@ -58,6 +65,30 @@ describe("MailbridgeToolService", () => {
       maxBodyChars: 1_000,
     });
     expect(spies.getAttachment).toHaveBeenCalledWith({ attachmentId: "attachment:1", maxBytes: 1_024 });
+  });
+
+  it("passes exact-subject mode and continuation cursors without widening scope", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const service = new MailbridgeToolService(bridge, config());
+
+    await service.invoke("mail_search_messages", {
+      accountId: "account:1",
+      subject: "Known subject",
+      subjectMatch: "exact",
+      cursor: "mb1.s.cursor",
+      limit: 2,
+    });
+
+    expect(spies.searchMessages).toHaveBeenCalledWith({
+      accountId: "account:1",
+      scope: "inbox",
+      subject: "Known subject",
+      subjectMatch: "exact",
+      unread: false,
+      flagged: false,
+      limit: 2,
+      cursor: "mb1.s.cursor",
+    });
   });
 
   it("passes bounded mailbox options", async () => {

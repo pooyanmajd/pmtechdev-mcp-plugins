@@ -1,3 +1,9 @@
+import {
+  DEFAULT_SEARCH_TIME_BUDGET_MS,
+  HARD_MAX_SEARCH_TIME_BUDGET_MS,
+  maximumSearchTimeBudgetMs,
+} from "./search-budget.js";
+
 export const MAILBRIDGE_MODES = ["read-only", "drafts", "full", "send"] as const;
 
 export type MailbridgeMode = (typeof MAILBRIDGE_MODES)[number];
@@ -8,12 +14,14 @@ export interface MailbridgeConfig {
   readonly maxResults: number;
   readonly maxBodyChars: number;
   readonly timeoutMs: number;
+  readonly searchBudgetMs: number;
 }
 
 export const CONFIG_LIMITS = Object.freeze({
   maxResults: 100,
   maxBodyChars: 500_000,
   timeoutMs: 120_000,
+  searchBudgetMs: HARD_MAX_SEARCH_TIME_BUDGET_MS,
 });
 
 export const CONFIG_DEFAULTS = Object.freeze({
@@ -21,6 +29,7 @@ export const CONFIG_DEFAULTS = Object.freeze({
   maxResults: 25,
   maxBodyChars: 100_000,
   timeoutMs: 20_000,
+  searchBudgetMs: DEFAULT_SEARCH_TIME_BUDGET_MS,
 });
 
 export class ConfigError extends Error {
@@ -97,6 +106,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): MailbridgeConf
     );
   }
 
+  const timeoutMs = parsePositiveInteger(
+    "MAILBRIDGE_TIMEOUT_MS",
+    env.MAILBRIDGE_TIMEOUT_MS,
+    CONFIG_DEFAULTS.timeoutMs,
+    CONFIG_LIMITS.timeoutMs,
+  );
+  const maximumSearchBudgetMs = maximumSearchTimeBudgetMs(timeoutMs);
+
   return {
     mode,
     allowedAccounts,
@@ -112,11 +129,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): MailbridgeConf
       CONFIG_DEFAULTS.maxBodyChars,
       CONFIG_LIMITS.maxBodyChars,
     ),
-    timeoutMs: parsePositiveInteger(
-      "MAILBRIDGE_TIMEOUT_MS",
-      env.MAILBRIDGE_TIMEOUT_MS,
-      CONFIG_DEFAULTS.timeoutMs,
-      CONFIG_LIMITS.timeoutMs,
+    timeoutMs,
+    searchBudgetMs: parsePositiveInteger(
+      "MAILBRIDGE_SEARCH_BUDGET_MS",
+      env.MAILBRIDGE_SEARCH_BUDGET_MS,
+      Math.min(CONFIG_DEFAULTS.searchBudgetMs, maximumSearchBudgetMs),
+      maximumSearchBudgetMs,
     ),
   };
 }

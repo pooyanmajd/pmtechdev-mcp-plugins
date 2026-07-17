@@ -1,3 +1,7 @@
+import {
+  DEFAULT_SEARCH_TIME_BUDGET_MS,
+  maximumSearchTimeBudgetMs,
+} from "../search-budget.js";
 import { MailBridgeError } from "./errors.js";
 import {
   decodeMailId,
@@ -8,6 +12,12 @@ import {
   type MailboxLocator,
   type MessageLocator,
 } from "./ids.js";
+import {
+  createSearchBinding,
+  decodeSearchCursor,
+  encodeSearchCursor,
+  type SearchCursorState,
+} from "./search-cursor.js";
 import {
   OsascriptAutomationRunner,
   type AutomationRequest,
@@ -69,6 +79,26 @@ export interface SearchMessagesResult {
   messages: MessageSummary[];
   scannedCount: number;
   incomplete: boolean;
+  nextCursor?: string;
+  stopReasons: SearchStopReason[];
+  coverage: SearchCoverage;
+}
+
+export type SearchStopReason =
+  | "time_budget"
+  | "message_limit"
+  | "mailbox_error"
+  | "mailbox_selection"
+  | "mailbox_limit"
+  | "cursor_limit"
+  | "cursor_invalidated";
+
+export type SearchStrategy = "indexed" | "native_exact_subject" | "mixed";
+
+export interface SearchCoverage {
+  mailboxesSelected: number;
+  mailboxesCompleted: number;
+  strategy: SearchStrategy;
 }
 
 export interface AttachmentMetadata {
@@ -109,11 +139,13 @@ export interface SearchMessagesInput {
   from?: string;
   to?: string;
   subject?: string;
+  subjectMatch?: "contains" | "exact";
   dateFrom?: string;
   dateTo?: string;
   unread?: boolean;
   flagged?: boolean;
   limit?: number;
+  cursor?: string;
 }
 
 export interface GetMessageInput {
@@ -213,6 +245,7 @@ export interface AppleMailBridgeOptions {
   allowedAccounts?: string[];
   maxBodyChars: number;
   timeoutMs: number;
+  searchBudgetMs?: number;
   maxResults?: number;
   maxAttachmentBytes?: number;
   runner?: AutomationRunner;
@@ -245,6 +278,9 @@ interface RawSearchMessagesResult {
   messages: RawMessageSummary[];
   scannedCount: number;
   incomplete: boolean;
+  nextCursor?: SearchCursorState;
+  stopReasons: SearchStopReason[];
+  coverage: SearchCoverage;
 }
 
 interface RawAttachment extends AttachmentLocator {
@@ -286,7 +322,6 @@ const HARD_MAX_RESULTS = 100;
 const HARD_MAX_BODY_CHARS = 1_000_000;
 const HARD_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const HARD_MAX_TIMEOUT_MS = 120_000;
-const MAX_SEARCH_TIME_BUDGET_MS = 12_000;
 
 function boundedInteger(
   value: number,
@@ -301,11 +336,6 @@ function boundedInteger(
     );
   }
   return value;
-}
-
-function searchTimeBudget(timeoutMs: number): number {
-  const margin = Math.max(1, Math.floor(timeoutMs / 5));
-  return Math.max(1, Math.min(MAX_SEARCH_TIME_BUDGET_MS, timeoutMs - margin));
 }
 
 function optionalText(value: string | undefined, name: string, maximum = 4_096): string | undefined {
@@ -441,7 +471,13 @@ export class AppleMailBridge implements MailBridge {
       HARD_MAX_ATTACHMENT_BYTES,
     );
     this.timeoutMs = boundedInteger(options.timeoutMs, "timeoutMs", 1, HARD_MAX_TIMEOUT_MS);
-    this.searchTimeBudgetMs = searchTimeBudget(this.timeoutMs);
+    const maximumSearchBudget = maximumSearchTimeBudgetMs(this.timeoutMs);
+    this.searchTimeBudgetMs = boundedInteger(
+      options.searchBudgetMs ?? Math.min(DEFAULT_SEARCH_TIME_BUDGET_MS, maximumSearchBudget),
+      "searchBudgetMs",
+      1,
+      maximumSearchBudget,
+    );
     this.runner = options.runner ?? new OsascriptAutomationRunner({ timeoutMs: this.timeoutMs });
   }
 
@@ -492,7 +528,7 @@ export class AppleMailBridge implements MailBridge {
       throw new MailBridgeError("INVALID_REQUEST", "The account and mailbox identifiers do not match.");
     }
     const limit = boundedInteger(input.limit ?? Math.min(25, this.maxResults), "limit", 1, this.maxResults);
-    const raw = await this.request<RawSearchMessagesResult>("searchMessages", {
+    const searchInput = {
       ...(account ? { account } : {}),
       ...(mailbox ? { mailbox } : {}),
       scope: input.scope ?? "inbox",
@@ -500,16 +536,42 @@ export class AppleMailBridge implements MailBridge {
       from: optionalText(input.from, "from", 320),
       to: optionalText(input.to, "to", 320),
       subject: optionalText(input.subject, "subject"),
+      subjectMatch: input.subjectMatch ?? "contains",
       dateFrom: isoDate(input.dateFrom, "dateFrom"),
       dateTo: isoDate(input.dateTo, "dateTo"),
       unread: input.unread,
       flagged: input.flagged,
+    };
+    if (searchInput.subject === undefined && searchInput.subjectMatch !== "contains") {
+      throw new MailBridgeError("INVALID_REQUEST", "subjectMatch requires a subject filter.");
+    }
+    const cursorBinding = createSearchBinding(searchInput);
+    const cursor = input.cursor ? decodeSearchCursor(input.cursor, cursorBinding) : undefined;
+    const raw = await this.request<RawSearchMessagesResult>("searchMessages", {
+      ...searchInput,
+      ...(cursor ? { cursor } : {}),
       limit,
     });
+    const stopReasons = [...raw.stopReasons];
+    let nextCursor: string | undefined;
+    if (raw.nextCursor) {
+      try {
+        nextCursor = encodeSearchCursor(raw.nextCursor, cursorBinding);
+      } catch (error: unknown) {
+        if (error instanceof MailBridgeError && error.code === "INVALID_ID") {
+          if (!stopReasons.includes("cursor_limit")) stopReasons.push("cursor_limit");
+        } else {
+          throw error;
+        }
+      }
+    }
     return {
       messages: raw.messages.map(mapMessage),
       scannedCount: raw.scannedCount,
       incomplete: raw.incomplete,
+      ...(nextCursor ? { nextCursor } : {}),
+      stopReasons,
+      coverage: raw.coverage,
     };
   }
 

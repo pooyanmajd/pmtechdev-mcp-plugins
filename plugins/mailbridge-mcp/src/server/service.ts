@@ -134,11 +134,13 @@ export class MailbridgeToolService {
           ...(input.from === undefined ? {} : { from: input.from }),
           ...(input.to === undefined ? {} : { to: input.to }),
           ...(input.subject === undefined ? {} : { subject: input.subject }),
+          subjectMatch: input.subjectMatch,
           ...(input.since === undefined ? {} : { dateFrom: input.since }),
           ...(input.before === undefined ? {} : { dateTo: input.before }),
           unread: input.unreadOnly,
           flagged: input.flaggedOnly,
           limit,
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
         });
       }
       case "mail_get_message": {

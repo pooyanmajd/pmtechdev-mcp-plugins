@@ -23026,18 +23026,28 @@ var StdioServerTransport = class {
   }
 };
 
+// src/search-budget.ts
+var DEFAULT_SEARCH_TIME_BUDGET_MS = 12e3;
+var HARD_MAX_SEARCH_TIME_BUDGET_MS = 11e4;
+function maximumSearchTimeBudgetMs(timeoutMs) {
+  const marginMs = Math.max(1, Math.floor(timeoutMs / 5));
+  return Math.max(1, Math.min(HARD_MAX_SEARCH_TIME_BUDGET_MS, timeoutMs - marginMs));
+}
+
 // src/config.ts
 var MAILBRIDGE_MODES = ["read-only", "drafts", "full", "send"];
 var CONFIG_LIMITS = Object.freeze({
   maxResults: 100,
   maxBodyChars: 5e5,
-  timeoutMs: 12e4
+  timeoutMs: 12e4,
+  searchBudgetMs: HARD_MAX_SEARCH_TIME_BUDGET_MS
 });
 var CONFIG_DEFAULTS = Object.freeze({
   mode: "read-only",
   maxResults: 25,
   maxBodyChars: 1e5,
-  timeoutMs: 2e4
+  timeoutMs: 2e4,
+  searchBudgetMs: DEFAULT_SEARCH_TIME_BUDGET_MS
 });
 var ConfigError = class extends Error {
   code = "INVALID_CONFIG";
@@ -23090,6 +23100,13 @@ function loadConfig(env = process.env) {
       "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send."
     );
   }
+  const timeoutMs = parsePositiveInteger(
+    "MAILBRIDGE_TIMEOUT_MS",
+    env.MAILBRIDGE_TIMEOUT_MS,
+    CONFIG_DEFAULTS.timeoutMs,
+    CONFIG_LIMITS.timeoutMs
+  );
+  const maximumSearchBudgetMs = maximumSearchTimeBudgetMs(timeoutMs);
   return {
     mode,
     allowedAccounts,
@@ -23105,11 +23122,12 @@ function loadConfig(env = process.env) {
       CONFIG_DEFAULTS.maxBodyChars,
       CONFIG_LIMITS.maxBodyChars
     ),
-    timeoutMs: parsePositiveInteger(
-      "MAILBRIDGE_TIMEOUT_MS",
-      env.MAILBRIDGE_TIMEOUT_MS,
-      CONFIG_DEFAULTS.timeoutMs,
-      CONFIG_LIMITS.timeoutMs
+    timeoutMs,
+    searchBudgetMs: parsePositiveInteger(
+      "MAILBRIDGE_SEARCH_BUDGET_MS",
+      env.MAILBRIDGE_SEARCH_BUDGET_MS,
+      Math.min(CONFIG_DEFAULTS.searchBudgetMs, maximumSearchBudgetMs),
+      maximumSearchBudgetMs
     )
   };
 }
@@ -23283,6 +23301,90 @@ function decodeMailId(kind, id) {
   } catch (error51) {
     if (error51 instanceof MailBridgeError) throw error51;
     return invalidId();
+  }
+}
+
+// src/mail/search-cursor.ts
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
+var CURSOR_PREFIX = "mb1.s.";
+var MAX_CURSOR_CHARS = 128 * 1024;
+var MAX_CURSOR_SCANS = 256;
+var MAX_CURSOR_INDEX = 1e7;
+var MAX_COMPONENT_CHARS2 = 4096;
+var CURSOR_AUTHENTICATION_KEY = randomBytes(32);
+function invalidCursor() {
+  throw new MailBridgeError("INVALID_ID", "The supplied search cursor is invalid or stale.");
+}
+function validText2(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_COMPONENT_CHARS2 && !value.includes("\0");
+}
+function validPath(value) {
+  return Array.isArray(value) && value.length > 0 && value.length <= 64 && value.every(validText2);
+}
+function validateScan(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidCursor();
+  const record2 = value;
+  const expectedKeys = ["accountKey", "anchorMessageKey", "done", "index", "native", "path"];
+  const actualKeys = Object.keys(record2).sort();
+  if (actualKeys.some((key) => !expectedKeys.includes(key)) || !validText2(record2.accountKey) || !validPath(record2.path) || !Number.isSafeInteger(record2.index) || Number(record2.index) < 0 || Number(record2.index) > MAX_CURSOR_INDEX || typeof record2.native !== "boolean" || typeof record2.done !== "boolean" || record2.anchorMessageKey !== void 0 && !validText2(record2.anchorMessageKey) || Number(record2.index) > 0 && record2.done === false && !validText2(record2.anchorMessageKey)) {
+    invalidCursor();
+  }
+  return {
+    accountKey: record2.accountKey,
+    path: record2.path,
+    index: Number(record2.index),
+    native: record2.native,
+    done: record2.done,
+    ...record2.anchorMessageKey === void 0 ? {} : { anchorMessageKey: record2.anchorMessageKey }
+  };
+}
+function validatePayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidCursor();
+  const record2 = value;
+  const actualKeys = Object.keys(record2).sort();
+  if (actualKeys.length !== 2 || actualKeys[0] !== "binding" || actualKeys[1] !== "scans" || typeof record2.binding !== "string" || !/^[a-f0-9]{64}$/.test(record2.binding) || !Array.isArray(record2.scans) || record2.scans.length === 0 || record2.scans.length > MAX_CURSOR_SCANS) {
+    invalidCursor();
+  }
+  const scans = record2.scans.map(validateScan);
+  const uniqueMailboxes = new Set(scans.map((scan) => `${scan.accountKey}\0${scan.path.join("\0")}`));
+  if (uniqueMailboxes.size !== scans.length) invalidCursor();
+  return { binding: record2.binding, scans };
+}
+function createSearchBinding(value) {
+  return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
+}
+function encodeSearchCursor(state, binding) {
+  const payload = validatePayload({ binding, scans: state.scans });
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", CURSOR_AUTHENTICATION_KEY).update(encodedPayload, "utf8").digest("hex");
+  const encoded = `${CURSOR_PREFIX}${encodedPayload}.${signature}`;
+  if (encoded.length > MAX_CURSOR_CHARS) invalidCursor();
+  return encoded;
+}
+function decodeSearchCursor(cursor, expectedBinding) {
+  if (typeof cursor !== "string" || cursor.length > MAX_CURSOR_CHARS || !cursor.startsWith(CURSOR_PREFIX)) {
+    invalidCursor();
+  }
+  const encoded = cursor.slice(CURSOR_PREFIX.length);
+  const parts = encoded.split(".");
+  if (parts.length !== 2 || !parts[0] || !/^[A-Za-z0-9_-]+$/.test(parts[0]) || !/^[a-f0-9]{64}$/.test(parts[1] ?? "")) {
+    invalidCursor();
+  }
+  try {
+    const encodedPayload = parts[0];
+    const suppliedSignature = Buffer.from(parts[1], "hex");
+    const expectedSignature = createHmac("sha256", CURSOR_AUTHENTICATION_KEY).update(encodedPayload, "utf8").digest();
+    if (suppliedSignature.length !== expectedSignature.length || !timingSafeEqual(suppliedSignature, expectedSignature)) {
+      invalidCursor();
+    }
+    const decoded = Buffer.from(encodedPayload, "base64url").toString("utf8");
+    if (Buffer.from(decoded, "utf8").toString("base64url") !== encodedPayload) invalidCursor();
+    const payload = validatePayload(JSON.parse(decoded));
+    if (payload.binding !== expectedBinding) invalidCursor();
+    return { scans: payload.scans };
+  } catch (error51) {
+    if (error51 instanceof MailBridgeError) throw error51;
+    return invalidCursor();
   }
 }
 
@@ -23531,7 +23633,6 @@ var HARD_MAX_RESULTS = 100;
 var HARD_MAX_BODY_CHARS = 1e6;
 var HARD_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 var HARD_MAX_TIMEOUT_MS = 12e4;
-var MAX_SEARCH_TIME_BUDGET_MS = 12e3;
 function boundedInteger(value, name, minimum, maximum) {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
     throw new MailBridgeError(
@@ -23540,10 +23641,6 @@ function boundedInteger(value, name, minimum, maximum) {
     );
   }
   return value;
-}
-function searchTimeBudget(timeoutMs) {
-  const margin = Math.max(1, Math.floor(timeoutMs / 5));
-  return Math.max(1, Math.min(MAX_SEARCH_TIME_BUDGET_MS, timeoutMs - margin));
 }
 function optionalText(value, name, maximum = 4096) {
   if (value === void 0) return void 0;
@@ -23664,7 +23761,13 @@ var AppleMailBridge = class {
       HARD_MAX_ATTACHMENT_BYTES
     );
     this.timeoutMs = boundedInteger(options.timeoutMs, "timeoutMs", 1, HARD_MAX_TIMEOUT_MS);
-    this.searchTimeBudgetMs = searchTimeBudget(this.timeoutMs);
+    const maximumSearchBudget = maximumSearchTimeBudgetMs(this.timeoutMs);
+    this.searchTimeBudgetMs = boundedInteger(
+      options.searchBudgetMs ?? Math.min(DEFAULT_SEARCH_TIME_BUDGET_MS, maximumSearchBudget),
+      "searchBudgetMs",
+      1,
+      maximumSearchBudget
+    );
     this.runner = options.runner ?? new OsascriptAutomationRunner({ timeoutMs: this.timeoutMs });
   }
   request(operation, input) {
@@ -23707,7 +23810,7 @@ var AppleMailBridge = class {
       throw new MailBridgeError("INVALID_REQUEST", "The account and mailbox identifiers do not match.");
     }
     const limit = boundedInteger(input.limit ?? Math.min(25, this.maxResults), "limit", 1, this.maxResults);
-    const raw = await this.request("searchMessages", {
+    const searchInput = {
       ...account ? { account } : {},
       ...mailbox ? { mailbox } : {},
       scope: input.scope ?? "inbox",
@@ -23715,16 +23818,42 @@ var AppleMailBridge = class {
       from: optionalText(input.from, "from", 320),
       to: optionalText(input.to, "to", 320),
       subject: optionalText(input.subject, "subject"),
+      subjectMatch: input.subjectMatch ?? "contains",
       dateFrom: isoDate(input.dateFrom, "dateFrom"),
       dateTo: isoDate(input.dateTo, "dateTo"),
       unread: input.unread,
-      flagged: input.flagged,
+      flagged: input.flagged
+    };
+    if (searchInput.subject === void 0 && searchInput.subjectMatch !== "contains") {
+      throw new MailBridgeError("INVALID_REQUEST", "subjectMatch requires a subject filter.");
+    }
+    const cursorBinding = createSearchBinding(searchInput);
+    const cursor = input.cursor ? decodeSearchCursor(input.cursor, cursorBinding) : void 0;
+    const raw = await this.request("searchMessages", {
+      ...searchInput,
+      ...cursor ? { cursor } : {},
       limit
     });
+    const stopReasons = [...raw.stopReasons];
+    let nextCursor;
+    if (raw.nextCursor) {
+      try {
+        nextCursor = encodeSearchCursor(raw.nextCursor, cursorBinding);
+      } catch (error51) {
+        if (error51 instanceof MailBridgeError && error51.code === "INVALID_ID") {
+          if (!stopReasons.includes("cursor_limit")) stopReasons.push("cursor_limit");
+        } else {
+          throw error51;
+        }
+      }
+    }
     return {
       messages: raw.messages.map(mapMessage),
       scannedCount: raw.scannedCount,
-      incomplete: raw.incomplete
+      incomplete: raw.incomplete,
+      ...nextCursor ? { nextCursor } : {},
+      stopReasons,
+      coverage: raw.coverage
     };
   }
   async getMessage(input) {
@@ -31869,6 +31998,7 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/server/schemas.ts
 var OPAQUE_ID_MAX_CHARS = 4096;
+var SEARCH_CURSOR_MAX_CHARS = 128 * 1024;
 var MAX_QUERY_CHARS = 2e3;
 var MAX_SUBJECT_CHARS = 998;
 var MAX_OUTGOING_BODY_CHARS = 2e5;
@@ -31876,6 +32006,7 @@ var MAX_RECIPIENTS_PER_FIELD = 50;
 var MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 var MAX_MESSAGE_BATCH = 25;
 var opaqueId = external_exports.string().trim().min(1, "An opaque identifier is required.").max(OPAQUE_ID_MAX_CHARS, "The opaque identifier is too long.");
+var searchCursor = external_exports.string().trim().min(1, "A search cursor is required.").max(SEARCH_CURSOR_MAX_CHARS, "The search cursor is too long.");
 var emailAddress = external_exports.string().trim().email().max(320);
 var recipients = external_exports.array(emailAddress).max(MAX_RECIPIENTS_PER_FIELD);
 var listAccountsInputSchema = external_exports.object({}).strict();
@@ -31891,12 +32022,17 @@ var searchMessagesInputSchema = external_exports.object({
   from: external_exports.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
   to: external_exports.string().trim().min(1).max(320).optional().describe("Recipient address or text to match."),
   subject: external_exports.string().trim().min(1).max(MAX_SUBJECT_CHARS).optional().describe("Subject text to match."),
+  subjectMatch: external_exports.enum(["contains", "exact"]).default("contains").describe("Use normalized exact matching for a known complete subject, or substring matching by default."),
   since: external_exports.string().datetime({ offset: true }).optional().describe("Inclusive ISO 8601 received-date lower bound."),
   before: external_exports.string().datetime({ offset: true }).optional().describe("Exclusive ISO 8601 received-date upper bound."),
   unreadOnly: external_exports.boolean().default(false),
   flaggedOnly: external_exports.boolean().default(false),
-  limit: external_exports.number().int().min(1).max(100).optional().describe("Maximum results; also capped by server configuration.")
+  limit: external_exports.number().int().min(1).max(100).optional().describe("Maximum results; also capped by server configuration."),
+  cursor: searchCursor.optional().describe("Opaque continuation cursor from an incomplete search using the same filters.")
 }).strict().refine(
+  ({ subject, subjectMatch }) => subject !== void 0 || subjectMatch === "contains",
+  { message: "subjectMatch=exact requires subject.", path: ["subjectMatch"] }
+).refine(
   ({ since, before }) => since === void 0 || before === void 0 || Date.parse(since) < Date.parse(before),
   { message: "since must be earlier than before.", path: ["before"] }
 );
@@ -32087,11 +32223,13 @@ var MailbridgeToolService = class {
           ...input.from === void 0 ? {} : { from: input.from },
           ...input.to === void 0 ? {} : { to: input.to },
           ...input.subject === void 0 ? {} : { subject: input.subject },
+          subjectMatch: input.subjectMatch,
           ...input.since === void 0 ? {} : { dateFrom: input.since },
           ...input.before === void 0 ? {} : { dateTo: input.before },
           unread: input.unreadOnly,
           flagged: input.flaggedOnly,
-          limit
+          limit,
+          ...input.cursor === void 0 ? {} : { cursor: input.cursor }
         });
       }
       case "mail_get_message": {
@@ -32195,7 +32333,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_search_messages",
     title: "Search Mail Messages",
-    description: "Search newest-first, bounded Apple Mail message metadata, defaulting to Inbox across allowed accounts. The result reports when its fixed scan or time budget made coverage incomplete; narrow the account, mailbox, dates, or terms before relying on an incomplete result.",
+    description: "Search newest-first, bounded Apple Mail message metadata, defaulting to Inbox across allowed accounts. Prefer one account at a time when several are configured, use exact subject matching for a known complete subject, and pass nextCursor back unchanged to resume incomplete coverage. Results report stop reasons and mailbox coverage.",
     inputSchema: inputSchemas.mail_search_messages,
     annotations: READ_ANNOTATIONS
   },
@@ -32299,7 +32437,8 @@ async function main() {
     ...config2.allowedAccounts === void 0 ? {} : { allowedAccounts: [...config2.allowedAccounts] },
     maxBodyChars: config2.maxBodyChars,
     maxResults: config2.maxResults,
-    timeoutMs: config2.timeoutMs
+    timeoutMs: config2.timeoutMs,
+    searchBudgetMs: config2.searchBudgetMs
   });
   const server = createMailbridgeServer(bridge, config2);
   await server.connect(new StdioServerTransport());

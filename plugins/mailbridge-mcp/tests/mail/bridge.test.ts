@@ -82,6 +82,8 @@ describe("AppleMailBridge", () => {
       }],
       scannedCount: 12,
       incomplete: false,
+      stopReasons: [],
+      coverage: { mailboxesSelected: 1, mailboxesCompleted: 1, strategy: "indexed" },
     });
     const bridge = makeBridge(runner);
 
@@ -99,9 +101,73 @@ describe("AppleMailBridge", () => {
       unread: true,
       limit: 10,
     });
-    expect(result).toMatchObject({ scannedCount: 12, incomplete: false });
+    expect(result).toMatchObject({
+      scannedCount: 12,
+      incomplete: false,
+      stopReasons: [],
+      coverage: { mailboxesSelected: 1, mailboxesCompleted: 1, strategy: "indexed" },
+    });
     expect(decodeMailId("message", result.messages[0]!.id)).toEqual(MESSAGE_LOCATOR);
     expect(decodeMailId("mailbox", result.messages[0]!.mailboxId)).toEqual(MAILBOX_LOCATOR);
+  });
+
+  it("encodes resumable progress and binds cursors to unchanged search filters", async () => {
+    const runner = new FakeRunner();
+    runner.enqueue({
+      messages: [],
+      scannedCount: 3,
+      incomplete: true,
+      nextCursor: {
+        scans: [{
+          accountKey: "account-1",
+          path: ["Inbox", "Project"],
+          index: 3,
+          native: false,
+          done: false,
+          anchorMessageKey: "message-3",
+        }],
+      },
+      stopReasons: ["time_budget"],
+      coverage: { mailboxesSelected: 1, mailboxesCompleted: 0, strategy: "indexed" },
+    });
+    runner.enqueue({
+      messages: [],
+      scannedCount: 2,
+      incomplete: false,
+      stopReasons: [],
+      coverage: { mailboxesSelected: 1, mailboxesCompleted: 1, strategy: "indexed" },
+    });
+    const bridge = makeBridge(runner);
+    const mailboxId = encodeMailId("mailbox", MAILBOX_LOCATOR);
+
+    const first = await bridge.searchMessages({
+      mailboxId,
+      subject: "Statement — July",
+      subjectMatch: "exact",
+      limit: 5,
+    });
+    expect(first.nextCursor).toMatch(/^mb1\.s\./);
+    if (!first.nextCursor) throw new Error("Expected a continuation cursor.");
+    await bridge.searchMessages({
+      mailboxId,
+      subject: "Statement — July",
+      subjectMatch: "exact",
+      limit: 10,
+      cursor: first.nextCursor,
+    });
+
+    expect(runner.requests[1]?.input).toMatchObject({
+      subject: "Statement — July",
+      subjectMatch: "exact",
+      cursor: { scans: [{ index: 3, anchorMessageKey: "message-3" }] },
+    });
+    await expect(bridge.searchMessages({
+      mailboxId,
+      subject: "A different subject",
+      subjectMatch: "exact",
+      cursor: first.nextCursor,
+    })).rejects.toMatchObject({ code: "INVALID_ID" });
+    expect(runner.requests).toHaveLength(2);
   });
 
   it("maps nested mailboxes and rejects mismatched account and mailbox selectors", async () => {

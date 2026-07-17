@@ -14,6 +14,7 @@ Mail.includeStandardAdditions = false;
 
 var MAX_MAILBOXES = 10000;
 var MAX_MESSAGES_SCANNED = 10000;
+var MAX_SEARCH_CURSOR_MAILBOXES = 256;
 var DEFAULT_SEARCH_TIME_BUDGET_MS = 12000;
 var MAX_HEADERS = 200;
 var MAX_HEADER_CHARS = 4096;
@@ -456,6 +457,28 @@ function lower(value) {
   return asString(value, "").toLowerCase();
 }
 
+function normalizedExactSubject(value) {
+  return lower(value)
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function exactSubjectToken(value) {
+  // Mail's whose comparison case behavior is not reliable enough to use a
+  // letter-bearing token as a completeness filter. ASCII digits are invariant
+  // under case conversion, so they can safely narrow reference-heavy subjects.
+  var tokens = asString(value, "").match(/[0-9]{3,}/g) || [];
+  var best = "";
+  for (var index = 0; index < tokens.length; index += 1) {
+    var token = tokens[index];
+    if (token.length > best.length) best = token;
+  }
+  return best;
+}
+
 function recipientText(message) {
   var groups = ["toRecipients", "ccRecipients", "bccRecipients"];
   var values = [];
@@ -467,6 +490,12 @@ function recipientText(message) {
     }
   }
   return lower(values.join(" "));
+}
+
+function messageSearchTimestamp(message) {
+  var value = property(message, "dateReceived", null) || property(message, "dateSent", null);
+  var timestamp = value ? new Date(value).getTime() : NaN;
+  return isNaN(timestamp) ? undefined : timestamp;
 }
 
 function matchesSearch(message, input) {
@@ -500,19 +529,70 @@ function matchesSearch(message, input) {
   }
   if (input.from && senderValue().indexOf(lower(input.from)) < 0) return false;
   if (input.to && recipientValue().indexOf(lower(input.to)) < 0) return false;
-  if (input.subject && subjectValue().indexOf(lower(input.subject)) < 0) return false;
+  if (input.subject) {
+    if (input.subjectMatch === "exact") {
+      if (normalizedExactSubject(subjectValue()) !== normalizedExactSubject(input.subject)) return false;
+    } else if (subjectValue().indexOf(lower(input.subject)) < 0) {
+      return false;
+    }
+  }
   // The public tool exposes these as "only" filters; false means do not filter.
   if (input.unread === true && boolProperty(message, "readStatus", false)) return false;
   if (input.flagged === true && !boolProperty(message, "flaggedStatus", false)) return false;
 
   if (input.dateFrom || input.dateTo) {
-    var value = property(message, "dateReceived", null) || property(message, "dateSent", null);
-    var timestamp = value ? new Date(value).getTime() : NaN;
-    if (isNaN(timestamp)) return false;
+    var timestamp = messageSearchTimestamp(message);
+    if (timestamp === undefined) return false;
     if (input.dateFrom && timestamp < new Date(input.dateFrom).getTime()) return false;
     if (input.dateTo && timestamp >= new Date(input.dateTo).getTime()) return false;
   }
   return true;
+}
+
+function nativeExactSubjectPredicate(input) {
+  if (!input.subject || input.subjectMatch !== "exact") return null;
+  var token = exactSubjectToken(input.subject);
+  if (!token) return null;
+  return { subject: { _contains: token } };
+}
+
+function searchMessageCollection(mailbox, input, requiredNativeState) {
+  var messages;
+  try {
+    messages = mailbox.messages;
+  } catch (_) {
+    return { messages: null, native: false, invalidated: requiredNativeState === true };
+  }
+  if (requiredNativeState === false) return { messages: messages, native: false };
+  var predicate = nativeExactSubjectPredicate(input);
+  if (!predicate || !messages || typeof messages.whose !== "function") {
+    return {
+      messages: messages,
+      native: false,
+      invalidated: requiredNativeState === true,
+    };
+  }
+  try {
+    return {
+      messages: messages.whose(predicate),
+      fallbackMessages: messages,
+      native: true,
+    };
+  } catch (_) {
+    return {
+      messages: messages,
+      native: false,
+      invalidated: requiredNativeState === true,
+    };
+  }
+}
+
+function mailboxCursorKey(account, path) {
+  return accountKey(account) + "\u0000" + path.join("\u0000");
+}
+
+function cursorStateKey(state) {
+  return asString(state.accountKey, "") + "\u0000" + (Array.isArray(state.path) ? state.path.join("\u0000") : "");
 }
 
 function searchMessagesOperation(request) {
@@ -552,53 +632,150 @@ function searchMessagesOperation(request) {
     }
   }
 
+  var cursorSupported = selectedMailboxes.length <= MAX_SEARCH_CURSOR_MAILBOXES;
+  if (!cursorSupported && input.cursor !== undefined) {
+    return {
+      messages: [],
+      scannedCount: 0,
+      incomplete: true,
+      stopReasons: ["mailbox_limit"],
+      coverage: {
+        mailboxesSelected: selectedMailboxes.length,
+        mailboxesCompleted: 0,
+        strategy: "indexed",
+      },
+    };
+  }
+
+  var cursorStates = null;
+  if (input.cursor !== undefined) {
+    var cursor = requireObject(input.cursor, "search cursor");
+    if (!Array.isArray(cursor.scans) || cursor.scans.length !== selectedMailboxes.length) {
+      cursorStates = [];
+    } else {
+      cursorStates = cursor.scans;
+    }
+  }
+
   var matches = [];
   var seenMessages = Object.create(null);
   var scanned = 0;
   var skipped = selectionIncomplete;
-  var budgetExhausted = false;
+  var timeBudgetExhausted = false;
+  var messageLimitExhausted = false;
+  var cursorInvalidated = cursorStates !== null && cursorStates.length !== selectedMailboxes.length;
   function timestamp(summary) {
     return Date.parse(summary.dateReceived || summary.dateSent || "") || 0;
   }
   function searchBudgetAvailable() {
-    return scanned < MAX_MESSAGES_SCANNED && Date.now() - startedAt < searchTimeBudgetMs;
+    if (scanned >= MAX_MESSAGES_SCANNED) {
+      messageLimitExhausted = true;
+      return false;
+    }
+    if (Date.now() - startedAt >= searchTimeBudgetMs) {
+      timeBudgetExhausted = true;
+      return false;
+    }
+    return true;
   }
   var mailboxScans = [];
   for (var selectedMailboxIndex = 0; selectedMailboxIndex < selectedMailboxes.length; selectedMailboxIndex += 1) {
     var selectedMailbox = selectedMailboxes[selectedMailboxIndex];
-    var messages;
-    try {
-      messages = selectedMailbox.mailbox.messages;
-    } catch (_) {
-      messages = null;
+    var cursorState = cursorStates ? cursorStates[selectedMailboxIndex] : null;
+    if (cursorState && cursorStateKey(cursorState) !== mailboxCursorKey(selectedMailbox.account, selectedMailbox.path)) {
+      cursorInvalidated = true;
     }
+    var requiredNativeState = cursorState && typeof cursorState.native === "boolean"
+      ? cursorState.native
+      : undefined;
+    var collection = cursorState && cursorState.done === true
+      ? { messages: null, native: requiredNativeState === true }
+      : searchMessageCollection(selectedMailbox.mailbox, input, requiredNativeState);
+    if (collection.invalidated) cursorInvalidated = true;
     mailboxScans.push({
       selectedMailbox: selectedMailbox,
-      messages: messages,
-      index: 0,
-      done: false,
+      messages: collection.messages,
+      fallbackMessages: collection.fallbackMessages,
+      native: collection.native === true,
+      index: cursorState && isFinite(Number(cursorState.index)) && Number(cursorState.index) >= 0 && Math.floor(Number(cursorState.index)) === Number(cursorState.index)
+        ? Number(cursorState.index)
+        : 0,
+      done: cursorState ? cursorState.done === true : false,
       candidate: null,
+      candidateIndex: -1,
+      candidateAnchorItem: null,
+      candidateAnchorMessageKey: undefined,
+      anchorMessageKey: cursorState ? asString(cursorState.anchorMessageKey, "") || undefined : undefined,
+      lastItem: null,
+      scanned: 0,
     });
+  }
+
+  if (!cursorInvalidated && cursorStates) {
+    for (var resumeIndex = 0; resumeIndex < mailboxScans.length; resumeIndex += 1) {
+      var resumeScan = mailboxScans[resumeIndex];
+      if (resumeScan.done || resumeScan.index === 0) continue;
+      if (!resumeScan.anchorMessageKey) {
+        cursorInvalidated = true;
+        break;
+      }
+      var anchorAccess = collectionValueItem(resumeScan.messages, resumeScan.index - 1);
+      if (anchorAccess.status !== "item") {
+        cursorInvalidated = true;
+        break;
+      }
+      var anchorIdentity = collectionItemIdentity(anchorAccess.item);
+      if (anchorIdentity.status !== "item" || anchorIdentity.value !== resumeScan.anchorMessageKey) {
+        cursorInvalidated = true;
+        break;
+      }
+    }
+  }
+
+  if (cursorInvalidated) {
+    return {
+      messages: [],
+      scannedCount: 0,
+      incomplete: true,
+      stopReasons: ["cursor_invalidated"],
+      coverage: {
+        mailboxesSelected: selectedMailboxes.length,
+        mailboxesCompleted: 0,
+        strategy: "indexed",
+      },
+    };
   }
 
   function advanceOne(scan) {
     if (scan.done || scan.candidate) return;
     if (!searchBudgetAvailable()) {
-      budgetExhausted = true;
       return;
     }
-    var access = collectionValueItem(scan.messages, scan.index);
-    scan.index += 1;
+    var currentIndex = scan.index;
+    var previousItem = scan.lastItem;
+    var previousAnchorMessageKey = scan.anchorMessageKey;
+    var access = collectionValueItem(scan.messages, currentIndex);
+    scan.index = currentIndex + 1;
     if (access.status === "end") {
       scan.done = true;
       return;
     }
     if (access.status === "error") {
+      if (scan.native && scan.fallbackMessages && scan.scanned === 0 && currentIndex === 0) {
+        scan.messages = scan.fallbackMessages;
+        scan.fallbackMessages = null;
+        scan.native = false;
+        scan.index = 0;
+        return;
+      }
       scan.done = true;
       skipped = true;
       return;
     }
     scanned += 1;
+    scan.scanned += 1;
+    scan.lastItem = access.item;
+    scan.anchorMessageKey = undefined;
     try {
       if (!matchesSearch(access.item, input)) return;
       var summary = rawMessage(scan.selectedMailbox.account, scan.selectedMailbox.path, access.item, false);
@@ -606,6 +783,9 @@ function searchMessagesOperation(request) {
       if (seenMessages[identity]) return;
       seenMessages[identity] = true;
       scan.candidate = summary;
+      scan.candidateIndex = currentIndex;
+      scan.candidateAnchorItem = previousItem;
+      scan.candidateAnchorMessageKey = previousItem ? undefined : previousAnchorMessageKey;
     } catch (_) {
       // A corrupt/unavailable individual message must not fail an otherwise useful search.
       skipped = true;
@@ -614,14 +794,14 @@ function searchMessagesOperation(request) {
 
   function fillCandidates() {
     var pending = true;
-    while (pending && !budgetExhausted) {
+    while (pending && !timeBudgetExhausted && !messageLimitExhausted) {
       pending = false;
       for (var scanIndex = 0; scanIndex < mailboxScans.length; scanIndex += 1) {
         var scan = mailboxScans[scanIndex];
         if (scan.done || scan.candidate) continue;
         pending = true;
         advanceOne(scan);
-        if (budgetExhausted) return;
+        if (timeBudgetExhausted || messageLimitExhausted) return;
       }
     }
   }
@@ -629,7 +809,7 @@ function searchMessagesOperation(request) {
   // Mail exposes each mailbox newest-first. Merge those ordered streams instead
   // of rescanning every selected mailbox before returning a small latest page.
   fillCandidates();
-  while (matches.length < limit && !budgetExhausted) {
+  while (matches.length < limit && !timeBudgetExhausted && !messageLimitExhausted) {
     var newestScan = null;
     for (var candidateIndex = 0; candidateIndex < mailboxScans.length; candidateIndex += 1) {
       var candidateScan = mailboxScans[candidateIndex];
@@ -641,15 +821,90 @@ function searchMessagesOperation(request) {
     if (!newestScan) break;
     matches.push(newestScan.candidate);
     newestScan.candidate = null;
+    newestScan.candidateIndex = -1;
+    newestScan.candidateAnchorItem = null;
+    newestScan.candidateAnchorMessageKey = undefined;
     if (matches.length >= limit) break;
-    while (!newestScan.done && !newestScan.candidate && !budgetExhausted) advanceOne(newestScan);
+    while (
+      !newestScan.done &&
+      !newestScan.candidate &&
+      !timeBudgetExhausted &&
+      !messageLimitExhausted
+    ) {
+      advanceOne(newestScan);
+    }
   }
 
-  return {
+  var stopReasons = [];
+  if (timeBudgetExhausted) stopReasons.push("time_budget");
+  if (messageLimitExhausted) stopReasons.push("message_limit");
+  if (selectionIncomplete) stopReasons.push("mailbox_selection");
+  if (skipped && !selectionIncomplete) stopReasons.push("mailbox_error");
+  var completedMailboxes = 0;
+  var nativeMailboxes = 0;
+  for (var coverageIndex = 0; coverageIndex < mailboxScans.length; coverageIndex += 1) {
+    if (mailboxScans[coverageIndex].done) completedMailboxes += 1;
+    if (mailboxScans[coverageIndex].native) nativeMailboxes += 1;
+  }
+  var strategy = nativeMailboxes === 0
+    ? "indexed"
+    : nativeMailboxes === mailboxScans.length
+      ? "native_exact_subject"
+      : "mixed";
+
+  var nextCursor;
+  if (
+    stopReasons.length > 0 &&
+    (timeBudgetExhausted || messageLimitExhausted) &&
+    !selectionIncomplete &&
+    !skipped
+  ) {
+    if (!cursorSupported) {
+      stopReasons.push("cursor_limit");
+    } else {
+      var nextScans = [];
+      var cursorBuildFailed = false;
+      for (var cursorIndex = 0; cursorIndex < mailboxScans.length; cursorIndex += 1) {
+        var cursorScan = mailboxScans[cursorIndex];
+        var resumeAt = cursorScan.candidate ? cursorScan.candidateIndex : cursorScan.index;
+        var anchorItem = cursorScan.candidate ? cursorScan.candidateAnchorItem : cursorScan.lastItem;
+        var anchorKey = cursorScan.candidate
+          ? cursorScan.candidateAnchorMessageKey
+          : cursorScan.anchorMessageKey;
+        if (!cursorScan.done && resumeAt > 0 && anchorItem) {
+          var cursorIdentity = collectionItemIdentity(anchorItem);
+          if (cursorIdentity.status === "item") anchorKey = cursorIdentity.value;
+          else cursorBuildFailed = true;
+        }
+        if (!cursorScan.done && resumeAt > 0 && !anchorKey) cursorBuildFailed = true;
+        var nextScanState = {
+          accountKey: accountKey(cursorScan.selectedMailbox.account),
+          path: cursorScan.selectedMailbox.path.slice(0),
+          index: resumeAt,
+          native: cursorScan.native,
+          done: cursorScan.done,
+        };
+        if (anchorKey) nextScanState.anchorMessageKey = anchorKey;
+        nextScans.push(nextScanState);
+      }
+      if (!cursorBuildFailed) nextCursor = { scans: nextScans };
+      else if (stopReasons.indexOf("mailbox_error") < 0) stopReasons.push("mailbox_error");
+    }
+  }
+
+  var result = {
     messages: matches,
     scannedCount: scanned,
-    incomplete: skipped || budgetExhausted,
+    incomplete: stopReasons.length > 0,
+    stopReasons: stopReasons,
+    coverage: {
+      mailboxesSelected: selectedMailboxes.length,
+      mailboxesCompleted: completedMailboxes,
+      strategy: strategy,
+    },
   };
+  if (nextCursor) result.nextCursor = nextCursor;
+  return result;
 }
 
 function fullMessage(resolved, maximum) {

@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       maxResults: CONFIG_DEFAULTS.maxResults,
       maxBodyChars: CONFIG_DEFAULTS.maxBodyChars,
       timeoutMs: CONFIG_DEFAULTS.timeoutMs,
+      searchBudgetMs: CONFIG_DEFAULTS.searchBudgetMs,
     });
   });
 
@@ -21,6 +22,7 @@ describe("loadConfig", () => {
         MAILBRIDGE_MAX_RESULTS: "75",
         MAILBRIDGE_MAX_BODY_CHARS: "50000",
         MAILBRIDGE_TIMEOUT_MS: "10000",
+        MAILBRIDGE_SEARCH_BUDGET_MS: "7000",
       }),
     ).toEqual({
       mode: "full",
@@ -28,6 +30,7 @@ describe("loadConfig", () => {
       maxResults: 75,
       maxBodyChars: 50_000,
       timeoutMs: 10_000,
+      searchBudgetMs: 7_000,
     });
   });
 
@@ -51,6 +54,8 @@ describe("loadConfig", () => {
     [{ MAILBRIDGE_MAX_RESULTS: String(CONFIG_LIMITS.maxResults + 1) }, "MAILBRIDGE_MAX_RESULTS"],
     [{ MAILBRIDGE_MAX_BODY_CHARS: "-1" }, "MAILBRIDGE_MAX_BODY_CHARS"],
     [{ MAILBRIDGE_TIMEOUT_MS: "NaN" }, "MAILBRIDGE_TIMEOUT_MS"],
+    [{ MAILBRIDGE_SEARCH_BUDGET_MS: "0" }, "MAILBRIDGE_SEARCH_BUDGET_MS"],
+    [{ MAILBRIDGE_TIMEOUT_MS: "10000", MAILBRIDGE_SEARCH_BUDGET_MS: "9000" }, "MAILBRIDGE_SEARCH_BUDGET_MS"],
     [{ MAILBRIDGE_ALLOWED_ACCOUNTS: "not-an-address" }, "MAILBRIDGE_ALLOWED_ACCOUNTS"],
   ])("rejects invalid configuration without echoing its value: %j", (env, variable) => {
     expect(() => loadConfig(env)).toThrow(ConfigError);
@@ -64,5 +69,9 @@ describe("loadConfig", () => {
         MAILBRIDGE_ALLOWED_ACCOUNTS: " ",
       }),
     ).toEqual(loadConfig({}));
+  });
+
+  it("derives a safe default search budget from short subprocess timeouts", () => {
+    expect(loadConfig({ MAILBRIDGE_TIMEOUT_MS: "1000" }).searchBudgetMs).toBe(800);
   });
 });
