@@ -820,15 +820,23 @@ describe("fixed JXA dispatcher contract", () => {
     const inbox = { name: "Inbox", mailboxes: () => [], messages: [sourceMessage] };
     const sentMessages: Array<Record<string, unknown>> = [];
     const runtime = harness([account("account-1", ["sender@example.com"], [inbox])], {
-      reply: () => ({
-        id: "reply-1",
-        sender: "sender@example.com",
-        subject: "Re: Question",
-        content: "Quoted source",
-        toRecipients: [{ address: "recipient@example.com" }],
-        ccRecipients: [],
-        bccRecipients: [],
-      }),
+      reply: () => {
+        let content = "Quoted source";
+        return {
+          id: "reply-1",
+          sender: "sender@example.com",
+          subject: "Re: Question",
+          get content() {
+            return content;
+          },
+          set content(value: string) {
+            content = `${value} `;
+          },
+          toRecipients: [{ address: "recipient@example.com" }],
+          ccRecipients: [],
+          bccRecipients: [],
+        };
+      },
       send: (message: Record<string, unknown>) => {
         sentMessages.push(message);
         return true;
@@ -854,7 +862,7 @@ describe("fixed JXA dispatcher contract", () => {
         acceptedForSending: true,
       },
     });
-    expect(sentMessages[0]?.content).toBe("Approved reply");
+    expect(sentMessages[0]?.content).toBe("Approved reply ");
 
     runtime.request(request("sendReply", {
       message: { accountKey: "account-1", path: ["Inbox"], messageKey: "42" },
@@ -871,6 +879,59 @@ describe("fixed JXA dispatcher contract", () => {
       error: { code: "SEND_TARGET_CHANGED" },
     });
     expect(sentMessages).toHaveLength(1);
+  });
+
+  it("rejects reply content changes other than Mail's terminal-space serialization", () => {
+    const sourceMessage = {
+      id: "42",
+      subject: "Question",
+      sender: "recipient@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    };
+    const inbox = { name: "Inbox", mailboxes: () => [], messages: [sourceMessage] };
+    let sendCalls = 0;
+    const runtime = harness([account("account-1", ["sender@example.com"], [inbox])], {
+      reply: () => {
+        let content = "Quoted source";
+        return {
+          id: "reply-1",
+          sender: "sender@example.com",
+          subject: "Re: Question",
+          get content() {
+            return content;
+          },
+          set content(value: string) {
+            content = `${value} unexpected`;
+          },
+          toRecipients: [{ address: "recipient@example.com" }],
+          ccRecipients: [],
+          bccRecipients: [],
+        };
+      },
+      send: () => {
+        sendCalls += 1;
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendReply", {
+      message: { accountKey: "account-1", path: ["Inbox"], messageKey: "42" },
+      from: "sender@example.com",
+      expectedTo: ["recipient@example.com"],
+      expectedCc: [],
+      expectedBcc: [],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "SEND_CONTENT_CHANGED" },
+    });
+    expect(sendCalls).toBe(0);
   });
 
   it("requires confirmation and an account allowlist before entering the send path", () => {

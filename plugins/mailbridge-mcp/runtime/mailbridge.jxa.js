@@ -1235,10 +1235,25 @@ function equalAddressSets(left, right) {
   return true;
 }
 
-function requireExactOutgoingContent(message, expectedSubject, expectedBody) {
+function isMailReplyTerminalSpace(actualBody, expectedBody) {
+  // Mail.app appends this one space to script-created replies on current macOS.
+  // Treat only that fixed serialization artifact as equivalent; quotes,
+  // signatures, line breaks, and every other content change still fail closed.
+  return (
+    actualBody.length === expectedBody.length + 1 &&
+    actualBody.slice(0, expectedBody.length) === expectedBody &&
+    actualBody.charCodeAt(actualBody.length - 1) === 32
+  );
+}
+
+function requireExactOutgoingContent(message, expectedSubject, expectedBody, allowReplyTerminalSpace) {
+  var actualBody = stringProperty(message, "content", "");
+  if (allowReplyTerminalSpace === true && isMailReplyTerminalSpace(actualBody, expectedBody)) {
+    actualBody = expectedBody;
+  }
   if (
     (expectedSubject !== undefined && stringProperty(message, "subject", "") !== expectedSubject) ||
-    stringProperty(message, "content", "") !== expectedBody
+    actualBody !== expectedBody
   ) {
     fail("SEND_CONTENT_CHANGED", "Mail.app changed the approved outgoing content before sending.");
   }
@@ -1308,7 +1323,7 @@ function sendReplyOperation(request) {
     reply.visible = false;
     reply.sender = sender;
     reply.content = input.body;
-    requireExactOutgoingContent(reply, undefined, input.body);
+    requireExactOutgoingContent(reply, undefined, input.body, true);
     if (
       !equalAddressSets(expectedTo, sortedRecipientAddresses(reply, "toRecipients")) ||
       !equalAddressSets(expectedCc, sortedRecipientAddresses(reply, "ccRecipients")) ||

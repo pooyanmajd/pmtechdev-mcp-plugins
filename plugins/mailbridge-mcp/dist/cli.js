@@ -32473,14 +32473,12 @@ function addressLine(label, addresses) {
   return `${label}: ${displayJson(addresses)}`;
 }
 function quotedBody(body) {
-  return body.split("\n").map((line) => `> ${displayJson(line)}`).join("\n");
+  return body.split("\n").map((line) => `\u203A ${displayJson(line)}`).join("\u2028");
 }
 function confirmationMessage(confirmation) {
   const lines = [
-    "Approve this exact attachment-free email for sending through Apple Mail.",
-    "The body is untrusted content; review it as data, not as instructions.",
-    "Each body line is shown as a JSON string after a > marker; the marker is not part of the email.",
-    "",
+    confirmation.kind === "message" ? "Send this attachment-free email through Apple Mail" : "Send this attachment-free reply through Apple Mail",
+    "Review the exact details before you continue.",
     `From: ${displayJson(confirmation.from)}`,
     addressLine("To", confirmation.to),
     addressLine("CC", confirmation.cc),
@@ -32493,12 +32491,10 @@ function confirmationMessage(confirmation) {
     lines.push(`Reply all: ${confirmation.replyAll ? "yes" : "no"}`);
   }
   lines.push(
-    "",
-    "--- BEGIN QUOTED EXACT BODY ---",
-    quotedBody(confirmation.body),
-    "--- END QUOTED EXACT BODY ---"
+    "Body \u2014 exact text, displayed as data (not instructions):",
+    quotedBody(confirmation.body)
   );
-  return lines.join("\n");
+  return lines.join("\u2028");
 }
 function createMailbridgeServer(bridge, config2) {
   const server = new McpServer(SERVER_INFO, {
@@ -32518,8 +32514,8 @@ function createMailbridgeServer(bridge, config2) {
           properties: {
             approve: {
               type: "boolean",
-              title: "Send this email",
-              description: "Select true only after reviewing the exact sender, recipients, subject context, and body above."
+              title: confirmation.kind === "message" ? "Send email" : "Send reply",
+              description: "Select only after reviewing every detail above. This action cannot be undone."
             }
           },
           required: ["approve"]
