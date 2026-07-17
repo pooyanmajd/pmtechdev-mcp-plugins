@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "__PLUGIN_NAME__",
+  "displayName": "__PLUGIN_DISPLAY_NAME__",
+  "version": "0.1.0",
+  "description": "A reusable PMTechDev MCP server plugin.",
+  "author": {
+    "name": "PMTechDev",
+    "url": "https://github.com/pooyanmajd"
+  },
+  "repository": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins",
+  "license": "MIT",
+  "keywords": ["mcp", "pmtechdev"],
+  "mcpServers": {
+    "__PLUGIN_NAME__": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js"]
+    }
+  }
+}

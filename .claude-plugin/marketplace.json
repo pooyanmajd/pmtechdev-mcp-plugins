@@ -1,0 +1,15 @@
+{
+  "name": "pmtechdev",
+  "owner": {
+    "name": "PMTechDev"
+  },
+  "description": "Local-first MCP plugins maintained by PMTechDev.",
+  "plugins": [
+    {
+      "name": "mailbridge-mcp",
+      "source": "./plugins/mailbridge-mcp",
+      "category": "Productivity",
+      "tags": ["email", "macos", "mcp", "productivity"]
+    }
+  ]
+}

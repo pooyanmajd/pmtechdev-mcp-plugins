@@ -3,7 +3,7 @@ Mailbridge MCP third-party notices
 
 The committed dist/cli.js bundle contains code from the packages below. Names,
 versions, licenses, and source locations were taken from the installed package
-metadata and bundle source map for version 0.2.1.
+metadata and bundle source map for version 0.2.2.
 
 Package                         Version  License       Source
 @modelcontextprotocol/sdk       1.29.0   MIT           https://github.com/modelcontextprotocol/typescript-sdk

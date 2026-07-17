@@ -9,7 +9,8 @@ const fail = (message) => {
 };
 
 const rootPackage = readJson("package.json");
-const marketplace = readJson(".agents/plugins/marketplace.json");
+const codexMarketplace = readJson(".agents/plugins/marketplace.json");
+const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
 const pluginRoot = resolve(root, "plugins");
 const pluginDirectories = readdirSync(pluginRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
@@ -20,20 +21,25 @@ if (rootPackage.name !== "pmtechdev-mcp-plugins") fail("unexpected root package 
 if (!rootPackage.workspaces?.includes("plugins/*") || !rootPackage.workspaces?.includes("packages/*")) {
   fail("root workspaces must include plugins/* and packages/*");
 }
-if (marketplace.name !== "pmtechdev") fail("marketplace name must be pmtechdev");
-if (!Array.isArray(marketplace.plugins)) fail("marketplace plugins must be an array");
+if (codexMarketplace.name !== "pmtechdev" || claudeMarketplace.name !== "pmtechdev") {
+  fail("marketplace names must be pmtechdev");
+}
+if (!Array.isArray(codexMarketplace.plugins) || !Array.isArray(claudeMarketplace.plugins)) {
+  fail("marketplace plugins must be arrays");
+}
 for (const path of [
   "packages/mcp-kit/src/index.ts",
+  "templates/mcp-plugin/.claude-plugin/plugin.json",
   "templates/mcp-plugin/.codex-plugin/plugin.json",
   "scripts/create-plugin.mjs"
 ]) {
   if (!existsSync(resolve(root, path))) fail(`required reusable workspace asset is missing: ${path}`);
 }
 
-const marketplaceNames = new Set();
-for (const entry of marketplace.plugins) {
-  if (marketplaceNames.has(entry.name)) fail(`duplicate marketplace plugin: ${entry.name}`);
-  marketplaceNames.add(entry.name);
+const codexMarketplaceNames = new Set();
+for (const entry of codexMarketplace.plugins) {
+  if (codexMarketplaceNames.has(entry.name)) fail(`duplicate Codex marketplace plugin: ${entry.name}`);
+  codexMarketplaceNames.add(entry.name);
   if (entry.source?.source !== "local" || entry.source?.path !== `./plugins/${entry.name}`) {
     fail(`invalid marketplace source for ${entry.name}`);
   }
@@ -43,34 +49,64 @@ for (const entry of marketplace.plugins) {
   if (!entry.category) fail(`missing marketplace category for ${entry.name}`);
 }
 
+const claudeMarketplaceNames = new Set();
+for (const entry of claudeMarketplace.plugins) {
+  if (claudeMarketplaceNames.has(entry.name)) fail(`duplicate Claude marketplace plugin: ${entry.name}`);
+  claudeMarketplaceNames.add(entry.name);
+  if (entry.source !== `./plugins/${entry.name}`) fail(`invalid Claude marketplace source for ${entry.name}`);
+  if (!entry.category) fail(`missing Claude marketplace category for ${entry.name}`);
+}
+
 for (const directory of pluginDirectories) {
   const prefix = `plugins/${directory}`;
-  const manifest = readJson(`${prefix}/.codex-plugin/plugin.json`);
+  const codexManifest = readJson(`${prefix}/.codex-plugin/plugin.json`);
+  const claudeManifest = readJson(`${prefix}/.claude-plugin/plugin.json`);
   const packageJson = readJson(`${prefix}/package.json`);
   const mcp = readJson(`${prefix}/.mcp.json`);
-  if (manifest.name !== directory) fail(`${prefix} folder and manifest names differ`);
+  if (codexManifest.name !== directory || claudeManifest.name !== directory) {
+    fail(`${prefix} folder and manifest names differ`);
+  }
   if (packageJson.name !== directory) fail(`${prefix} folder and package names differ`);
-  if (manifest.version !== packageJson.version) fail(`${prefix} versions differ`);
-  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version)) {
+  if (codexManifest.version !== packageJson.version || claudeManifest.version !== packageJson.version) {
+    fail(`${prefix} versions differ`);
+  }
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(codexManifest.version)) {
     fail(`${prefix} version is not semver`);
   }
-  if (!marketplaceNames.has(directory)) fail(`${prefix} is missing from the marketplace`);
+  if (!codexMarketplaceNames.has(directory) || !claudeMarketplaceNames.has(directory)) {
+    fail(`${prefix} is missing from a marketplace`);
+  }
   const registration = Object.values(mcp.mcpServers ?? {})[0];
   if (!registration || registration.command !== "node" || registration.args?.[0] !== "./dist/cli.js") {
     fail(`${prefix} does not launch its committed bundle`);
+  }
+  const claudeRegistration = Object.values(claudeManifest.mcpServers ?? {})[0];
+  if (
+    !claudeRegistration ||
+    claudeRegistration.command !== "node" ||
+    claudeRegistration.args?.[0] !== "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"
+  ) {
+    fail(`${prefix} does not launch its committed bundle from Claude Code`);
+  }
+  if (directory === "mailbridge-mcp" && claudeRegistration.env?.MAILBRIDGE_MODE !== "read-only") {
+    fail(`${prefix} Claude registration is not read-only by default`);
   }
   for (const path of [
     `${prefix}/dist/cli.js`,
     `${prefix}/README.md`,
     `${prefix}/skills`,
+    `${prefix}/.claude-plugin/plugin.json`,
     `${prefix}/.codex-plugin/plugin.json`
   ]) {
     if (!existsSync(resolve(root, path))) fail(`required plugin payload is missing: ${path}`);
   }
 }
 
-for (const name of marketplaceNames) {
-  if (!pluginDirectories.includes(name)) fail(`marketplace points to missing plugin: ${name}`);
+for (const name of codexMarketplaceNames) {
+  if (!pluginDirectories.includes(name)) fail(`Codex marketplace points to missing plugin: ${name}`);
+}
+for (const name of claudeMarketplaceNames) {
+  if (!pluginDirectories.includes(name)) fail(`Claude marketplace points to missing plugin: ${name}`);
 }
 
 process.stdout.write(

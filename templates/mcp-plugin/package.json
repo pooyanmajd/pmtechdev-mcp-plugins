@@ -2,7 +2,7 @@
   "name": "__PLUGIN_NAME__",
   "version": "0.1.0",
   "private": true,
-  "description": "A PMTechDev MCP server and Codex plugin",
+  "description": "A PMTechDev MCP server and Codex and Claude Code plugin",
   "type": "module",
   "engines": {
     "node": "^22.0.0 || ^24.0.0"

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
@@ -32,14 +32,15 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
-function requestClient(executable, cwd) {
-  const child = spawn(executable, [], {
+function requestClient(executable, args, cwd, extraEnvironment = {}) {
+  const child = spawn(executable, args, {
     cwd,
     env: {
       HOME: process.env.HOME ?? temporaryRoot,
       MAILBRIDGE_MODE: "read-only",
       PATH: process.env.PATH ?? "",
       TMPDIR: process.env.TMPDIR ?? tmpdir(),
+      ...extraEnvironment,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -104,6 +105,27 @@ function requestClient(executable, cwd) {
   return { close, request, send };
 }
 
+async function verifyClient(client) {
+  const initialized = await client.request(1, "initialize", {
+    capabilities: {},
+    clientInfo: { name: "mailbridge-package-smoke", version: "1.0.0" },
+    protocolVersion,
+  });
+  if (initialized?.serverInfo?.name !== "mailbridge-mcp") {
+    throw new Error("initialize returned the wrong server name");
+  }
+  client.send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+  const listed = await client.request(2, "tools/list");
+  if (!Array.isArray(listed?.tools) || listed.tools.length === 0) {
+    throw new Error("tools/list returned no tools");
+  }
+  const names = new Set(listed.tools.map((tool) => tool?.name));
+  for (const tool of expectedTools) {
+    if (!names.has(tool)) throw new Error(`tools/list is missing ${tool}`);
+  }
+  return listed.tools.length;
+}
+
 try {
   if (process.platform !== "darwin") throw new Error("Mailbridge package smoke test requires macOS");
   const packageDirectory = resolve(temporaryRoot, "package");
@@ -118,27 +140,52 @@ try {
     "install", "--prefix", installDirectory, "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--offline", tarball,
   ], { env: npmEnvironment });
 
+  const installedPluginRoot = resolve(installDirectory, "node_modules/mailbridge-mcp");
   const executable = resolve(installDirectory, "node_modules/.bin/mailbridge-mcp");
   await access(executable, constants.X_OK);
-  const client = requestClient(executable, installDirectory);
+  const client = requestClient(executable, [], installDirectory);
+  let listedToolCount;
   try {
-    const initialized = await client.request(1, "initialize", {
-      capabilities: {},
-      clientInfo: { name: "mailbridge-package-smoke", version: "1.0.0" },
-      protocolVersion,
-    });
-    if (initialized?.serverInfo?.name !== "mailbridge-mcp") throw new Error("initialize returned the wrong server name");
-    client.send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-    const listed = await client.request(2, "tools/list");
-    if (!Array.isArray(listed?.tools) || listed.tools.length === 0) throw new Error("tools/list returned no tools");
-    const names = new Set(listed.tools.map((tool) => tool?.name));
-    for (const tool of expectedTools) {
-      if (!names.has(tool)) throw new Error(`tools/list is missing ${tool}`);
-    }
-    process.stdout.write(`Packaged Mailbridge initialized and listed ${listed.tools.length} tools without invoking Mail.\n`);
+    listedToolCount = await verifyClient(client);
   } finally {
     await client.close();
   }
+
+  const claudeManifest = JSON.parse(
+    await readFile(resolve(installedPluginRoot, ".claude-plugin/plugin.json"), "utf8"),
+  );
+  const claudeRegistration = claudeManifest.mcpServers?.mailbridge;
+  if (
+    claudeRegistration?.command !== "node" ||
+    !Array.isArray(claudeRegistration.args) ||
+    claudeRegistration.args.length === 0
+  ) {
+    throw new Error("Packaged Claude plugin MCP registration is invalid");
+  }
+  const expandPluginRoot = (value) => value.replaceAll("${CLAUDE_PLUGIN_ROOT}", installedPluginRoot);
+  const claudeClient = requestClient(
+    expandPluginRoot(claudeRegistration.command),
+    claudeRegistration.args.map(expandPluginRoot),
+    installedPluginRoot,
+    {
+      CLAUDE_PLUGIN_ROOT: installedPluginRoot,
+      ...Object.fromEntries(
+        Object.entries(claudeRegistration.env ?? {}).map(([key, value]) => [key, expandPluginRoot(value)]),
+      ),
+    },
+  );
+  try {
+    const claudeToolCount = await verifyClient(claudeClient);
+    if (claudeToolCount !== listedToolCount) {
+      throw new Error("Claude plugin MCP registration listed a different tool count");
+    }
+  } finally {
+    await claudeClient.close();
+  }
+
+  process.stdout.write(
+    `Packaged Mailbridge initialized through its binary and Claude plugin MCP registration, listing ${listedToolCount} tools without invoking Mail.\n`,
+  );
 } finally {
   await rm(temporaryRoot, { force: true, recursive: true });
 }

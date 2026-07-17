@@ -2,7 +2,7 @@
 
 ![Mailbridge MCP](assets/logo.svg)
 
-Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and—only in a separate opt-in mode—send confirmed attachment-free messages and replies.
+Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex and Claude Code plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and—only in a separate opt-in mode—send confirmed attachment-free messages and replies.
 
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
@@ -57,7 +57,7 @@ Read the workspace [Security](../../SECURITY.md), [Privacy](../../PRIVACY.md), a
 - At least one account configured and working in Mail.app
 - Node.js 22 or 24
 - npm only when building from source
-- An MCP client that supports local STDIO servers; the included plugin metadata targets Codex
+- An MCP client that supports local STDIO servers; native plugin metadata is included for Codex and Claude Code
 
 Mailbridge does not run on Linux or Windows. It does not configure Mail accounts for you.
 
@@ -89,11 +89,11 @@ mkdir -p ~/.codex/skills
 ln -sfn /absolute/path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/skills/mailbridge ~/.codex/skills/mailbridge
 ```
 
-Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before installing it. Generic MCP clients do not consume Codex skills; Mailbridge therefore repeats the essential untrusted-content warnings in its tool descriptions.
+Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before installing it. Generic MCP clients outside supported plugin hosts may not consume the bundled skill, so Mailbridge repeats the essential untrusted-content warnings in its tool descriptions.
 
 ## Install as a Codex plugin
 
-This plugin directory contains a complete payload: `.codex-plugin/plugin.json`, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in read-only mode.
+This plugin directory contains a complete payload: Codex and Claude Code manifests, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in read-only mode.
 
 Marketplace installation is supported in Codex CLI and for Codex in the ChatGPT desktop app. Plugins are not currently available in the Codex IDE extension. The commands below use Codex CLI; see the official [Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) for other supported installation surfaces.
 
@@ -107,16 +107,27 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.2.1`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.2.2`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.1
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.2
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
 Choose one marketplace source for a fresh installation. If `pmtechdev` is already configured from `main`, run `codex plugin marketplace remove pmtechdev` before re-adding the pinned source. Start a new Codex task after installation so the bundled skill and MCP tools load.
 
 The bundled marketplace registration intentionally exposes all accounts configured in Mail.app because no account addresses are known at install time. Users who need account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
+
+## Install as a Claude Code plugin
+
+The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and keeps `MAILBRIDGE_MODE=read-only` by default. Install the immutable release with:
+
+```bash
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.2.2
+claude plugin install mailbridge-mcp@pmtechdev
+```
+
+Run `/reload-plugins` after installation, then use `/mcp` to confirm that the plugin-provided `mailbridge` server connected. The same host-trust, account-isolation, and model-provider cautions described above apply to Claude Code.
 
 For local development, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
 
@@ -269,7 +280,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `ACCOUNT_NOT_ALLOWED` | Select an account in `MAILBRIDGE_ALLOWED_ACCOUNTS`, or deliberately revise the allowlist before restart. |
 | `ATTACHMENT_TOO_LARGE` / `RESPONSE_TOO_LARGE` | Request less data; Mailbridge will not bypass its configured limits. |
 | `UNSUPPORTED_ATTACHMENT` | Open or export the attachment manually in Mail.app if you trust it. |
-| No plugin tools after reinstall | Confirm the installed payload contains `dist/cli.js` and `runtime/mailbridge.jxa.js`, reinstall the plugin entry, and start a new Codex task. |
+| No plugin tools after reinstall | Confirm the installed payload contains `dist/cli.js` and `runtime/mailbridge.jxa.js`, reinstall the plugin entry, then start a new Codex task or run `/reload-plugins` in Claude Code. |
 
 Errors are intentionally sanitized; tool results do not expose raw scripts, credentials, environment variables, or stack traces.
 
