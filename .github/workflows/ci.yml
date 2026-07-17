@@ -55,7 +55,13 @@ jobs:
       - name: Verify committed plugin bundles are current
         run: git diff --exit-code -- plugins/*/dist
 
-      - name: Confirm Mailbridge stays read-only in CI with no send surface
-        run: test "$MAILBRIDGE_MODE" = "read-only" && ! grep -qE 'mail_send_draft|Mail\.send|sendDraft' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
+      - name: Confirm Mailbridge stays read-only in CI with the reviewed send surface
+        run: |
+          test "$MAILBRIDGE_MODE" = "read-only"
+          grep -q 'sendMessageOperation' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          grep -q 'sendReplyOperation' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          grep -q 'mail_send_message' plugins/mailbridge-mcp/dist/cli.js
+          grep -q 'mail_send_reply' plugins/mailbridge-mcp/dist/cli.js
+          ! grep -qE 'mail_send_draft|sendDraft|sendForward' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
 
 # CI never requests live connector credentials or macOS Automation permission.
