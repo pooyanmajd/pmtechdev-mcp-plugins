@@ -367,6 +367,87 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
+  it("resolves a message through Mail's by-id specifier without scanning the mailbox", () => {
+    const message = {
+      id: "42",
+      subject: "Direct lookup",
+      sender: "sender@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+      content: "direct body",
+      headers: [],
+      toRecipients: [],
+      ccRecipients: [],
+      bccRecipients: [],
+      mailAttachments: [],
+    };
+    const messages = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === "byId") return (id: number) => (id === 42 ? message : undefined);
+        if (typeof property === "string" && /^\d+$/.test(property)) {
+          throw new Error("indexed mailbox scanning is forbidden when by-id lookup succeeds");
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(
+      request("getMessage", {
+        message: { accountKey: "account-1", path: ["Inbox"], messageKey: "42" },
+        maxBodyChars: 100,
+      }),
+    );
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: { messageKey: "42", body: "direct body" },
+    });
+  });
+
+  it("falls back to the bounded indexed scan when by-id lookup cannot verify the message", () => {
+    const message = {
+      id: "7",
+      subject: "Fallback lookup",
+      sender: "sender@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: false,
+      flaggedStatus: false,
+      content: "fallback body",
+      headers: [],
+      toRecipients: [],
+      ccRecipients: [],
+      bccRecipients: [],
+      mailAttachments: [],
+    };
+    const messages = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === "byId") {
+          return () => {
+            throw new Error("by-id specifiers are unsupported for this mailbox");
+          };
+        }
+        if (property === "0") return message;
+        if (property === "1") return undefined;
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const mailbox = { name: "Inbox", mailboxes: () => [], messages };
+    const runtime = harness([account("account-1", ["person@example.com"], [mailbox])]);
+    runtime.request(
+      request("getMessage", {
+        message: { accountKey: "account-1", path: ["Inbox"], messageKey: "7" },
+        maxBodyChars: 100,
+      }),
+    );
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: { messageKey: "7", body: "fallback body" },
+    });
+  });
+
   it("contains no send operation or dynamic-code primitive", () => {
     expect(source).not.toMatch(/mail_send_draft|sendDraft|Mail\.send|\beval\s*\(|new Function/);
   });

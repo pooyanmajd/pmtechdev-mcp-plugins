@@ -4,6 +4,10 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- Message resolution now tries Mail's by-id specifier first and keeps the bounded indexed scan as fallback, so single and batch reads in large mailboxes no longer rescan the message collection.
+
 ## [0.1.1] - 2026-07-17
 
 ### Added
