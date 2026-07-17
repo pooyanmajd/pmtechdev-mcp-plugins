@@ -19,7 +19,10 @@ function account(id: string, addresses: string[], mailboxes: unknown[] = []): Re
   };
 }
 
-function harness(accounts: unknown[]): { context: JxaContext; request(value: unknown): void } {
+function harness(
+  accounts: unknown[],
+  mailOverrides: Record<string, unknown> = {},
+): { context: JxaContext; request(value: unknown): void } {
   let requestText = "";
   const inputData = {
     get length(): number {
@@ -40,7 +43,7 @@ function harness(accounts: unknown[]): { context: JxaContext; request(value: unk
     },
     NSUTF8StringEncoding: 4,
   });
-  const mail = { accounts: () => accounts, includeStandardAdditions: false };
+  const mail = { accounts: () => accounts, includeStandardAdditions: false, ...mailOverrides };
   const context = createContext({
     Buffer,
     $: foundation,
@@ -448,7 +451,213 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
-  it("contains no send operation or dynamic-code primitive", () => {
-    expect(source).not.toMatch(/mail_send_draft|sendDraft|Mail\.send|\beval\s*\(|new Function/);
+  it("atomically sends a confirmed attachment-free message from an allowlisted account", () => {
+    const outgoingMessages: unknown[] = [];
+    const sentMessages: unknown[] = [];
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage: (properties: Record<string, unknown>) => ({
+        ...properties,
+        id: "outgoing-1",
+        toRecipients: [],
+        ccRecipients: [],
+        bccRecipients: [],
+      }),
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages,
+      send: (message: unknown) => {
+        sentMessages.push(message);
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendMessage", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      cc: [],
+      bcc: [],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        accountKey: "account-1",
+        sender: "sender@example.com",
+        subject: "Approved subject",
+        recipients: { to: [{ address: "recipient@example.com" }] },
+        acceptedForSending: true,
+      },
+    });
+    expect(outgoingMessages).toHaveLength(1);
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  it("atomically creates and sends a confirmed reply without exposing draft sending", () => {
+    const sourceMessage = {
+      id: "42",
+      subject: "Question",
+      sender: "recipient@example.com",
+      dateReceived: new Date("2026-07-17T10:00:00.000Z"),
+      readStatus: true,
+      flaggedStatus: false,
+    };
+    const inbox = { name: "Inbox", mailboxes: () => [], messages: [sourceMessage] };
+    const sentMessages: Array<Record<string, unknown>> = [];
+    const runtime = harness([account("account-1", ["sender@example.com"], [inbox])], {
+      reply: () => ({
+        id: "reply-1",
+        sender: "sender@example.com",
+        subject: "Re: Question",
+        content: "Quoted source",
+        toRecipients: [{ address: "recipient@example.com" }],
+        ccRecipients: [],
+        bccRecipients: [],
+      }),
+      send: (message: Record<string, unknown>) => {
+        sentMessages.push(message);
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendReply", {
+      message: { accountKey: "account-1", path: ["Inbox"], messageKey: "42" },
+      from: "sender@example.com",
+      expectedTo: ["recipient@example.com"],
+      expectedCc: [],
+      expectedBcc: [],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: {
+        subject: "Re: Question",
+        recipients: { to: [{ address: "recipient@example.com" }] },
+        acceptedForSending: true,
+      },
+    });
+    expect(sentMessages[0]?.content).toBe("Approved reply");
+
+    runtime.request(request("sendReply", {
+      message: { accountKey: "account-1", path: ["Inbox"], messageKey: "42" },
+      from: "sender@example.com",
+      expectedTo: ["different@example.com"],
+      expectedCc: [],
+      expectedBcc: [],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    }, ["sender@example.com"]));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "SEND_TARGET_CHANGED" },
+    });
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  it("requires confirmation and an account allowlist before entering the send path", () => {
+    const runtime = harness([account("account-1", ["sender@example.com"])]);
+    const input = {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Subject",
+      body: "Body",
+    };
+
+    runtime.request(request("sendMessage", input, ["sender@example.com"]));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+
+    runtime.request(request("sendMessage", { ...input, confirmed: true }));
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
+  it("fails closed if Mail changes approved outgoing content before submission", () => {
+    let sendCalls = 0;
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage: (properties: Record<string, unknown>) => ({
+        ...properties,
+        content: "Mail-added content",
+        id: "outgoing-1",
+        toRecipients: [],
+        ccRecipients: [],
+        bccRecipients: [],
+      }),
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages: [],
+      send: () => {
+        sendCalls += 1;
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendMessage", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Subject",
+      body: "Approved body",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "SEND_CONTENT_CHANGED" },
+    });
+    expect(sendCalls).toBe(0);
+  });
+
+  it("reports an unknown outcome instead of encouraging a duplicate send", () => {
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage: (properties: Record<string, unknown>) => ({
+        ...properties,
+        id: "outgoing-1",
+        toRecipients: [],
+        ccRecipients: [],
+        bccRecipients: [],
+      }),
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages: [],
+      send: () => {
+        throw new Error("ambiguous Apple Event failure");
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendMessage", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Subject",
+      body: "Body",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: false,
+      error: { code: "MUTATION_OUTCOME_UNKNOWN" },
+    });
+  });
+
+  it("contains only the reviewed send operations and no dynamic-code primitive", () => {
+    expect(source).toMatch(/sendMessageOperation/);
+    expect(source).toMatch(/sendReplyOperation/);
+    expect(source).not.toMatch(/mail_send_draft|sendDraft|sendForward|\beval\s*\(|new Function/);
   });
 });

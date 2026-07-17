@@ -8,7 +8,7 @@ import { createFakeBridge } from "./fake-bridge.js";
 function config(mode: MailbridgeMode = "read-only"): MailbridgeConfig {
   return {
     mode,
-    allowedAccounts: undefined,
+    allowedAccounts: mode === "send" ? ["me@example.com"] : undefined,
     maxResults: 10,
     maxBodyChars: 1_000,
     timeoutMs: 5_000,
@@ -74,6 +74,8 @@ describe("MailbridgeToolService", () => {
     ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"] }],
     ["mail_create_reply_draft", { messageId: "message:1", from: "me@example.com" }],
     ["mail_create_forward_draft", { messageId: "message:1", from: "me@example.com", to: ["person@example.com"] }],
+    ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], body: "Hello", confirmed: true }],
+    ["mail_send_reply", { messageId: "message:1", from: "me@example.com", expectedTo: ["person@example.com"], body: "Hello", confirmed: true }],
   ] as const)("blocks %s in read-only mode", async (tool, input) => {
     const { bridge } = createFakeBridge();
     const result = await new MailbridgeToolService(bridge, config()).invoke(tool, input);
@@ -116,6 +118,40 @@ describe("MailbridgeToolService", () => {
     });
   });
 
+  it("keeps sends disabled in legacy full mode and allows explicitly confirmed sends only in send mode", async () => {
+    const legacy = createFakeBridge();
+    const fullResult = await new MailbridgeToolService(legacy.bridge, config("full")).invoke(
+      "mail_send_reply",
+      { messageId: "message:1", from: "me@example.com", expectedTo: ["person@example.com"], body: "Approved reply", confirmed: true },
+    );
+    expect(parsedResult(fullResult)).toMatchObject({ ok: false, error: { code: "READ_ONLY" } });
+    expect(legacy.spies.sendReply).not.toHaveBeenCalled();
+
+    const enabled = createFakeBridge();
+    const service = new MailbridgeToolService(enabled.bridge, config("send"));
+    const message = await service.invoke("mail_send_message", {
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    });
+    const reply = await service.invoke("mail_send_reply", {
+      messageId: "message:1",
+      from: "me@example.com",
+      expectedTo: ["person@example.com"],
+      replyAll: false,
+      body: "Approved reply",
+      confirmed: true,
+    });
+
+    expect(message.isError).not.toBe(true);
+    expect(reply.isError).not.toBe(true);
+    expect(enabled.spies.sendMessage).toHaveBeenCalledOnce();
+    expect(enabled.spies.sendReply).toHaveBeenCalledOnce();
+  });
+
   it("serializes modifying operations and marks mutation timeouts as outcome unknown", async () => {
     const serialized = createFakeBridge();
     let releaseFirst = (): void => undefined;
@@ -142,6 +178,23 @@ describe("MailbridgeToolService", () => {
       { accountId: "account:1", from: "me@example.com", to: ["person@example.com"] },
     );
     expect(parsedResult(result)).toMatchObject({
+      ok: false,
+      error: { code: "MUTATION_OUTCOME_UNKNOWN" },
+    });
+
+    const sendTimedOut = createFakeBridge();
+    sendTimedOut.spies.sendMessage.mockRejectedValue({ code: "TIMEOUT" });
+    const sendResult = await new MailbridgeToolService(sendTimedOut.bridge, config("send")).invoke(
+      "mail_send_message",
+      {
+        accountId: "account:1",
+        from: "me@example.com",
+        to: ["person@example.com"],
+        body: "Approved body",
+        confirmed: true,
+      },
+    );
+    expect(parsedResult(sendResult)).toMatchObject({
       ok: false,
       error: { code: "MUTATION_OUTCOME_UNKNOWN" },
     });
@@ -182,9 +235,12 @@ describe("MailbridgeToolService", () => {
     ["mail_set_message_state", { messageId: "id" }],
     ["mail_create_draft", { accountId: "account:1", from: "me@example.com", to: ["not-an-email"] }],
     ["mail_create_forward_draft", { messageId: "id", from: "me@example.com" }],
+    ["mail_send_message", { accountId: "account:1", from: "me@example.com", to: ["person@example.com"], body: "Hello", confirmed: false }],
+    ["mail_send_reply", { messageId: "id", from: "me@example.com", expectedTo: ["person@example.com"], body: "   ", confirmed: true }],
   ] as const)("rejects invalid bounded input for %s", async (tool, input) => {
     const { bridge } = createFakeBridge();
-    const result = await new MailbridgeToolService(bridge, config("full")).invoke(tool, input);
+    const mode = tool.startsWith("mail_send_") ? "send" : "full";
+    const result = await new MailbridgeToolService(bridge, config(mode)).invoke(tool, input);
 
     expect(parsedResult(result)).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
   });

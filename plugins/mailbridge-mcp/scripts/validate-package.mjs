@@ -40,8 +40,15 @@ if (registration?.env?.MAILBRIDGE_MODE !== "read-only") {
 
 const runtime = readFileSync(resolve(root, "runtime/mailbridge.jxa.js"), "utf8");
 const bundle = readFileSync(resolve(root, "dist/cli.js"), "utf8");
-if (/mail_send_draft|sendDraft|Mail\.send/.test(`${runtime}\n${bundle}`)) {
-  fail("v0.1 payload unexpectedly contains a send operation");
+const sendSurface = `${runtime}\n${bundle}`;
+if (!runtime.includes("sendMessageOperation") || !runtime.includes("sendReplyOperation")) {
+  fail("reviewed atomic send operations are missing from the dispatcher");
+}
+if (!bundle.includes("mail_send_message") || !bundle.includes("mail_send_reply")) {
+  fail("reviewed send tools are missing from the bundle");
+}
+if (/mail_send_draft|sendDraft|sendForward/.test(sendSurface)) {
+  fail("payload contains an unreviewed draft or forward send operation");
 }
 
 process.stdout.write(`Validated ${packageJson.name} ${packageJson.version} package metadata.\n`);

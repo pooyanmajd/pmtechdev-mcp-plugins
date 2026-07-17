@@ -29,7 +29,7 @@ Mailbridge MCP is a macOS-only, local STDIO server. It exposes a fixed, bounded 
                                │ Apple events (TCC Automation)
 ┌──────────────────────────────▼───────────────────────────────┐
 │ Mail.app                                                     │
-│ Accounts, provider sessions, local message model, drafts     │
+│ Accounts, provider sessions, messages, drafts, outbound mail │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,9 +67,11 @@ Mail.app owns provider authentication, network traffic, account configuration, a
 
 ### Mutation boundary
 
-Read-only mode blocks all mutations. Draft mode permits draft creation but not message-state changes. Full mode additionally permits read/flag state changes. Modifying operations are serialized and bounded by a queue; a timeout is reported as `MUTATION_OUTCOME_UNKNOWN` so callers inspect Mail.app instead of blindly retrying.
+Read-only mode blocks all mutations. Draft mode permits draft creation but not message-state changes. Full mode additionally permits read/flag state changes and deliberately retains its non-send semantics across upgrades. Send mode permits those operations plus the two reviewed send tools, and configuration fails closed unless at least one sender address is allowlisted. Modifying operations are serialized and bounded by a queue; an uncertain send outcome is reported as `MUTATION_OUTCOME_UNKNOWN` so callers inspect Mail.app instead of blindly retrying.
 
-Mailbridge v0.1 exposes no send operation. Mail's public outgoing-message interface cannot provide a complete, stable attachment inventory for every draft, so the runtime cannot prove atomically that an edited draft still matches an approval. Drafts remain editable and sendable by the user in Mail.app.
+Mail's public outgoing-message interface cannot provide a complete, stable attachment inventory for every draft, so Mailbridge never sends an arbitrary edited draft or forward. `mail_send_message` and `mail_send_reply` instead construct one attachment-free outgoing object from bounded, validated input and submit it within the same JXA operation. The constructed subject/body are read back before submission and changed content fails closed. Reply content is replaced with exactly the approved body, and Mail's resolved recipient sets must match the approved expected recipients immediately before submission. Each call requires send mode, an account allowlist, a substantive body, and literal `confirmed: true`. Tool guidance requires the exact sender, recipients, subject, and body to be shown and approved before that flag is set. The runtime cannot enforce human comprehension, so the trusted-host boundary remains material.
+
+The send result records only that Mail.app accepted the object for sending. Provider delivery and recipient receipt occur beyond the Mailbridge trust boundary. Changed content produces `SEND_CONTENT_CHANGED`, a reply-recipient mismatch produces `SEND_TARGET_CHANGED`, a false result produces `SEND_REJECTED`, and a timeout or ambiguous Apple Event failure produces `MUTATION_OUTCOME_UNKNOWN` and must not be retried blindly.
 
 ## Identity and consistency
 
@@ -92,7 +94,7 @@ Mailboxes and messages can change between calls. Mailbridge favors explicit `NOT
 
 ## Tool annotations
 
-List, search, and get operations declare `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. State and draft tools declare `readOnlyHint=false`, `destructiveHint=false`, and `openWorldHint=false`. No tool communicates externally beyond Mail.app's normal account synchronization.
+List, search, and get operations declare `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. State and draft tools declare `readOnlyHint=false`, `destructiveHint=false`, and `openWorldHint=false`. Send tools declare `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=false`, and `openWorldHint=true` because they communicate externally through Mail.app and cannot be safely retried.
 
 ## Distribution
 

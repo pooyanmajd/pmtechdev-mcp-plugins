@@ -163,12 +163,35 @@ export interface CreateForwardDraftInput extends DraftAddressing {
   body?: string;
 }
 
+export interface SendMessageInput extends CreateDraftInput {
+  confirmed: true;
+}
+
+export interface SendReplyInput {
+  messageId: string;
+  from: string;
+  expectedTo: string[];
+  expectedCc?: string[];
+  expectedBcc?: string[];
+  replyAll?: boolean;
+  body: string;
+  confirmed: true;
+}
+
 export interface DraftResult {
   id: string;
   accountId: string;
   from: string;
   subject: string;
   sent: boolean;
+}
+
+export interface SendResult {
+  accountId: string;
+  from: string;
+  subject: string;
+  recipients: MailRecipients;
+  acceptedForSending: true;
 }
 
 export interface MailBridge {
@@ -182,6 +205,8 @@ export interface MailBridge {
   createDraft(input: CreateDraftInput): Promise<DraftResult>;
   createReplyDraft(input: CreateReplyDraftInput): Promise<DraftResult>;
   createForwardDraft(input: CreateForwardDraftInput): Promise<DraftResult>;
+  sendMessage(input: SendMessageInput): Promise<SendResult>;
+  sendReply(input: SendReplyInput): Promise<SendResult>;
 }
 
 export interface AppleMailBridgeOptions {
@@ -250,6 +275,13 @@ interface RawDraftResult extends DraftLocator {
   sent: boolean;
 }
 
+interface RawSendResult extends AccountLocator {
+  sender: string;
+  subject: string;
+  recipients: MailRecipients;
+  acceptedForSending: true;
+}
+
 const HARD_MAX_RESULTS = 100;
 const HARD_MAX_BODY_CHARS = 1_000_000;
 const HARD_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -290,6 +322,14 @@ function requiredText(value: string, name: string, maximum = 200_000): string {
     throw new MailBridgeError("INVALID_REQUEST", `${name} is invalid.`);
   }
   return value;
+}
+
+function requiredNonBlankText(value: string, name: string, maximum = 200_000): string {
+  const text = requiredText(value, name, maximum);
+  if (!text.trim()) {
+    throw new MailBridgeError("INVALID_REQUEST", `${name} must not be empty.`);
+  }
+  return text;
 }
 
 function normalizedEmail(value: string, name = "Email address"): string {
@@ -608,6 +648,57 @@ export class AppleMailBridge implements MailBridge {
     return this.mapDraft(raw);
   }
 
+  async sendMessage(input: SendMessageInput): Promise<SendResult> {
+    if (input.confirmed !== true) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
+    }
+    if (this.allowedAccounts.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+    }
+    const account = decodeMailId("account", input.accountId);
+    const from = this.validateSender(input.from);
+    const to = normalizeAddressList(input.to, "to");
+    if (to.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "A message requires at least one To recipient.");
+    }
+    const raw = await this.request<RawSendResult>("sendMessage", {
+      account,
+      from,
+      to,
+      cc: normalizeAddressList(input.cc, "cc"),
+      bcc: normalizeAddressList(input.bcc, "bcc"),
+      subject: requiredText(input.subject, "subject", 998),
+      body: requiredNonBlankText(input.body, "body"),
+      confirmed: true,
+    });
+    return this.mapSend(raw);
+  }
+
+  async sendReply(input: SendReplyInput): Promise<SendResult> {
+    if (input.confirmed !== true) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
+    }
+    if (this.allowedAccounts.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+    }
+    const message = decodeMailId("message", input.messageId);
+    const expectedTo = normalizeAddressList(input.expectedTo, "expectedTo");
+    if (expectedTo.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "A reply requires at least one expected To recipient.");
+    }
+    const raw = await this.request<RawSendResult>("sendReply", {
+      message,
+      from: this.validateSender(input.from),
+      expectedTo,
+      expectedCc: normalizeAddressList(input.expectedCc, "expectedCc"),
+      expectedBcc: normalizeAddressList(input.expectedBcc, "expectedBcc"),
+      replyAll: input.replyAll ?? false,
+      body: requiredNonBlankText(input.body, "body"),
+      confirmed: true,
+    });
+    return this.mapSend(raw);
+  }
+
   private validateSender(value: string): string {
     const sender = normalizedEmail(value, "from");
     if (this.allowedAccounts.length > 0 && !this.allowedAccounts.includes(sender)) {
@@ -627,6 +718,19 @@ export class AppleMailBridge implements MailBridge {
       from: raw.sender,
       subject: raw.subject,
       sent: raw.sent,
+    };
+  }
+
+  private mapSend(raw: RawSendResult): SendResult {
+    if (raw.acceptedForSending !== true) {
+      throw new MailBridgeError("SEND_REJECTED", "Mail.app did not accept the message for sending.");
+    }
+    return {
+      accountId: accountId(raw),
+      from: raw.sender,
+      subject: raw.subject,
+      recipients: raw.recipients,
+      acceptedForSending: true,
     };
   }
 }

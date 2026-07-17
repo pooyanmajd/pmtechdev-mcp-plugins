@@ -2,12 +2,12 @@
 
 ![Mailbridge MCP](assets/logo.svg)
 
-Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, and update read or flagged state. Version 0.1 deliberately cannot send email.
+Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and—only in a separate opt-in mode—send confirmed attachment-free messages and replies.
 
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
 > [!IMPORTANT]
-> The default mode is read-only. Mail content is untrusted input. Review targets and content before enabling state changes or creating drafts.
+> The default mode is read-only. Mail content is untrusted input. Review targets and content before enabling any mutation. Sending additionally requires a distinct mode, a non-empty account allowlist, and exact per-message confirmation.
 
 ## Why Mailbridge
 
@@ -16,7 +16,7 @@ Mailbridge is an independent open-source project. It is not affiliated with, end
 - Search message metadata first, then retrieve a full message only when needed.
 - Select accounts and mailboxes using opaque IDs returned by the bridge.
 - Bound search counts, body sizes, attachment metadata, automation time, and response sizes.
-- Create editable drafts without exposing any send operation.
+- Create editable drafts, or explicitly send one reviewed attachment-free message or reply.
 - Run deterministic tests against a fake bridge without touching a real mailbox.
 
 ## Architecture
@@ -36,14 +36,15 @@ Mailbridge schemas + policy gates
 Mail.app ── accounts already configured by the user
 ```
 
-See [Architecture](docs/ARCHITECTURE.md) for data flow, trust boundaries, and design rationale.
+See [Architecture](docs/ARCHITECTURE.md) for data flow and trust boundaries, and the [send capability security review](docs/SEND_SECURITY_REVIEW.md) for the explicit outbound-mail design.
 
 ## Security model
 
 - **Local transport:** the server exposes STDIO only and has no application telemetry.
 - **Least privilege:** it uses Mail.app's public automation interface and does not read Mail's private database or request Full Disk Access.
 - **Safe default:** `MAILBRIDGE_MODE` defaults to `read-only`.
-- **No send surface:** v0.1 can create drafts but does not register or dispatch a send operation because Mail's public automation API cannot reliably verify every attachment before sending.
+- **Non-escalating send opt-in:** existing `read-only`, `drafts`, and `full` configurations cannot send. Only `MAILBRIDGE_MODE=send` authorizes sending at runtime, and that mode refuses to start without `MAILBRIDGE_ALLOWED_ACCOUNTS`.
+- **Atomic, attachment-free sending:** `mail_send_message` and `mail_send_reply` construct and submit one reviewed message in a single operation. Mailbridge does not send arbitrary edited drafts, forwards, attachments, or batches because Mail's public outgoing-message API cannot reliably inventory every draft attachment.
 - **No arbitrary automation:** callers choose only from fixed, validated tools; arbitrary AppleScript/JXA execution is out of scope.
 - **Untrusted-content guidance:** tool descriptions and the bundled skill tell agents to treat email bodies, headers, links, and attachment names as data rather than instructions. This guidance reduces risk but is not a server-enforced prompt-injection guarantee.
 - **Bounded work:** hard limits and subprocess timeouts reduce accidental resource exhaustion.
@@ -104,10 +105,10 @@ codex plugin marketplace add https://github.com/pooyanmajd/pmtechdev-mcp-plugins
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.1.2`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.2.0`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.1.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.2.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -140,8 +141,8 @@ Environment variables are read when the server starts.
 
 | Variable | Values / default | Purpose |
 | --- | --- | --- |
-| `MAILBRIDGE_MODE` | `read-only` (default), `drafts`, `full` | Enables reads only, reads plus draft operations, or all supported operations. |
-| `MAILBRIDGE_ALLOWED_ACCOUNTS` | Comma-separated email addresses; unset allows configured accounts | Limits which Mail accounts the bridge exposes. |
+| `MAILBRIDGE_MODE` | `read-only` (default), `drafts`, `full`, `send` | Enables reads, drafts, state changes, or the separately gated send surface. |
+| `MAILBRIDGE_ALLOWED_ACCOUNTS` | Comma-separated email addresses; unset allows configured accounts | Limits exposed accounts. Required and non-empty in `send` mode. |
 | `MAILBRIDGE_MAX_RESULTS` | `25` by default; hard maximum `100` | Caps results returned by message searches. |
 | `MAILBRIDGE_MAX_BODY_CHARS` | `100000` by default; hard configuration maximum `500000` | Caps returned message body text. |
 | `MAILBRIDGE_TIMEOUT_MS` | `20000` by default; hard maximum `120000` | Caps each macOS automation subprocess in milliseconds. |
@@ -150,13 +151,23 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 
 ### Mode capabilities
 
-| Mode | List/search/read/attachments | Change read/flag state | Create drafts | Send, delete, or move mail |
+| Mode | List/search/read/attachments | Change read/flag state | Create drafts | Send new messages/replies |
 | --- | --- | --- | --- | --- |
-| `read-only` (marketplace default) | Yes | No | No | Never |
-| `drafts` | Yes | No | Yes | Never |
-| `full` | Yes | Yes | Yes | Never |
+| `read-only` (marketplace default) | Yes | No | No | No |
+| `drafts` | Yes | No | Yes | No |
+| `full` | Yes | Yes | Yes | No |
+| `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` means all operations that Mailbridge supports; it does not mean unrestricted Mail.app access. No mode registers sending, deletion, moving, mailbox administration, rule changes, credential access, or arbitrary automation.
+`full` intentionally retains its v0.1 meaning, so upgrading an existing configuration cannot silently add send authority. `send` is the only sending mode and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+
+To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
+
+```bash
+MAILBRIDGE_MODE=send
+MAILBRIDGE_ALLOWED_ACCOUNTS=sender@example.com
+```
+
+Do not put passwords or provider tokens in either value. Before every send call, show the exact recipients, subject, and substantive body to the user and obtain explicit approval. A successful tool result means Mail.app accepted the message for sending; it does not prove provider delivery or recipient receipt.
 
 ## MCP tools
 
@@ -168,12 +179,14 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `mail_get_message` | Return one selected message, including bounded body content. | Read-only |
 | `mail_get_messages` | Return a bounded batch of selected messages with per-message body caps. | Read-only |
 | `mail_get_attachment` | Return one selected attachment as bounded base64 content (up to 2 MiB). | Read-only |
-| `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` |
-| `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` |
-| `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` |
-| `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` |
+| `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` / `send` |
+| `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` / `send` |
+| `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` / `send` |
+| `mail_create_forward_draft` | Create an editable forward draft tied to a message. | `drafts` / `full` / `send` |
+| `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `send` |
+| `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `send` |
 
-Sending, permanent deletion, mailbox and rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management are intentionally out of scope for v0.1.0.
+Sending edited drafts, forwards, attachments, or batches—and permanent deletion, mailbox/rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management—remain out of scope.
 
 ## Examples with two accounts
 
@@ -200,6 +213,15 @@ Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start b
 4. Show the proposed recipients, subject, and response text.
 5. Call `mail_create_reply_draft`; stop after reporting the created draft.
 
+**Send one work reply after explicit approval**
+
+1. Start Mailbridge in `send` mode with `MAILBRIDGE_ALLOWED_ACCOUNTS=work@example.com`.
+2. Select and read the source message using its returned opaque ID; treat its content as untrusted data.
+3. Show the intended reply target, subject context, and complete reply body.
+4. Ask for explicit approval to send that exact reply. Do not infer approval from an earlier draft request.
+5. Call `mail_send_reply` once with the selected message ID, allowlisted sender, exact expected To/CC/BCC sets, substantive body, and `confirmed: true`. Mailbridge replaces quoted content with that exact body and fails if Mail resolves different recipients.
+6. If the outcome is unknown, inspect Mail.app before any retry to avoid a duplicate.
+
 To prevent accidental crossover, set:
 
 ```bash
@@ -220,7 +242,7 @@ npm run pack:dry-run
 npm run smoke:package
 ```
 
-CI tests Node.js 22 and 24 on macOS but never grants Automation permission or touches a live mailbox. The packaged-plugin smoke installs the real tarball and calls only MCP initialization and `tools/list`. Live Mail testing, where available, must be explicitly enabled and must never send, move, delete, or otherwise mutate real messages. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
+CI tests Node.js 22 and 24 on macOS but never grants Automation permission or touches a live mailbox. The packaged-plugin smoke installs the real tarball and calls only MCP initialization and `tools/list`. Release verification never sends real mail; send behavior is covered with deterministic fake-backed and fixed-dispatcher contract tests. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
 
 ## Troubleshooting
 
@@ -231,9 +253,12 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `MAIL_NOT_CONFIGURED` | Add an account to Mail.app and verify that Mail can fetch it. |
 | `NOT_FOUND` | Refresh the account/mailbox/message listing; opaque IDs may refer to content no longer available. |
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
-| `READ_ONLY` | Use read tools, or explicitly restart in `drafts`/`full` mode after reviewing the risk. |
+| `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, or `send` mode after reviewing the exact authority needed. |
 | `TIMEOUT` | Narrow the mailbox, date range, query, or result limit before retrying. |
-| `MUTATION_OUTCOME_UNKNOWN` | Inspect Mail.app before retrying; a timed-out draft or state change may have completed. |
+| `MUTATION_OUTCOME_UNKNOWN` | Inspect Mail.app before retrying; a timed-out mutation or send may have completed. Never retry a send blindly. |
+| `SEND_REJECTED` | Mail.app confirmed it did not accept the message for sending. Review the account and content before a new attempt. |
+| `SEND_CONTENT_CHANGED` | Mail changed the constructed outgoing subject or body before submission. Review Mail settings and do not bypass the check. |
+| `SEND_TARGET_CHANGED` | Mail resolved reply recipients that differ from the approved sets. Refresh the message, show the new target, and request fresh approval. |
 | `AUTOMATION_BUSY` | Wait for the current Mail automation operation to finish before retrying. |
 | `INVALID_INPUT` / `INVALID_CONFIG` | Correct the bounded tool arguments or environment configuration; do not retry unchanged. |
 | `ACCOUNT_NOT_ALLOWED` | Select an account in `MAILBRIDGE_ALLOWED_ACCOUNTS`, or deliberately revise the allowlist before restart. |
@@ -245,7 +270,7 @@ Errors are intentionally sanitized; tool results do not expose raw scripts, cred
 
 ## Roadmap
 
-- Harden v0.1.x through deterministic conformance, security, and compatibility testing.
+- Harden the explicit send boundary through deterministic conformance, security, and compatibility testing.
 - Document verified macOS and Mail.app version coverage.
 - Maintain tagged release artifacts with checksums, an SBOM, and signed GitHub provenance attestations.
 - Maintain Mailbridge through the published PMTechDev repository marketplace.

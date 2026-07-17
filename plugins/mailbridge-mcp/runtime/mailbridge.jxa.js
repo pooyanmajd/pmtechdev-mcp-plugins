@@ -832,6 +832,20 @@ function rawDraft(account, draft, sender, sent) {
   };
 }
 
+function rawSend(account, draft, sender) {
+  return {
+    accountKey: accountKey(account),
+    sender: sender,
+    subject: stringProperty(draft, "subject", ""),
+    recipients: {
+      to: recipients(draft, "toRecipients"),
+      cc: recipients(draft, "ccRecipients"),
+      bcc: recipients(draft, "bccRecipients"),
+    },
+    acceptedForSending: true,
+  };
+}
+
 function persistDraft(draft) {
   try {
     Mail.save(draft);
@@ -916,6 +930,146 @@ function createForwardDraftOperation(request) {
   }
 }
 
+function requireSendConfirmation(request, input) {
+  if (input.confirmed !== true) {
+    fail("INVALID_REQUEST", "Sending requires explicit confirmation.");
+  }
+  if (request.policy.allowedAccounts.length === 0) {
+    fail("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+  }
+
+  var body = asString(input.body, "");
+  if (!body.trim() || body.length > 200000 || body.indexOf("\0") >= 0) {
+    fail("INVALID_REQUEST", "The outgoing message body is invalid.");
+  }
+  input.body = body;
+}
+
+function validatedSendAddresses(value, name, requireOne) {
+  var values = value === undefined ? [] : value;
+  if (!Array.isArray(values) || values.length > 50 || (requireOne && values.length === 0)) {
+    fail("INVALID_REQUEST", name + " recipients are invalid.");
+  }
+  var normalized = [];
+  for (var index = 0; index < values.length; index += 1) {
+    var address = normalizeEmail(values[index]);
+    if (!address || !/^[^\s<>@]+@[^\s<>@]+$/.test(address)) {
+      fail("INVALID_REQUEST", name + " recipients are invalid.");
+    }
+    if (normalized.indexOf(address) < 0) normalized.push(address);
+  }
+  return normalized;
+}
+
+function sortedRecipientAddresses(message, propertyName) {
+  var values = recipients(message, propertyName);
+  var addresses = [];
+  for (var index = 0; index < values.length; index += 1) {
+    var address = normalizeEmail(values[index].address);
+    if (address && addresses.indexOf(address) < 0) addresses.push(address);
+  }
+  return addresses.sort();
+}
+
+function equalAddressSets(left, right) {
+  var expected = left.slice(0).sort();
+  if (expected.length !== right.length) return false;
+  for (var index = 0; index < expected.length; index += 1) {
+    if (expected[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function requireExactOutgoingContent(message, expectedSubject, expectedBody) {
+  if (
+    (expectedSubject !== undefined && stringProperty(message, "subject", "") !== expectedSubject) ||
+    stringProperty(message, "content", "") !== expectedBody
+  ) {
+    fail("SEND_CONTENT_CHANGED", "Mail.app changed the approved outgoing content before sending.");
+  }
+}
+
+function sendOutgoing(draft) {
+  var accepted;
+  try {
+    accepted = Mail.send(draft);
+  } catch (_) {
+    fail("MUTATION_OUTCOME_UNKNOWN", "Mail.app did not confirm whether the message was accepted for sending.");
+  }
+  if (accepted !== true) {
+    discardDraft(draft);
+    fail("SEND_REJECTED", "Mail.app did not accept the message for sending.");
+  }
+}
+
+function sendMessageOperation(request) {
+  var input = requireObject(request.input, "input");
+  requireSendConfirmation(request, input);
+  input.to = validatedSendAddresses(input.to, "to", true);
+  input.cc = validatedSendAddresses(input.cc, "cc", false);
+  input.bcc = validatedSendAddresses(input.bcc, "bcc", false);
+  var subject = asString(input.subject, "");
+  if (subject.length > 998 || subject.indexOf("\0") >= 0) {
+    fail("INVALID_REQUEST", "The outgoing message subject is invalid.");
+  }
+  var account = resolveAccount(input.account, request.policy);
+  var sender = ensureSender(account, input.from, request.policy);
+  var message = Mail.OutgoingMessage({
+    visible: false,
+    sender: sender,
+    subject: subject,
+    content: input.body,
+  });
+  var registered = false;
+  var result;
+  try {
+    addAddressing(message, input);
+    Mail.outgoingMessages.push(message);
+    registered = true;
+    requireExactOutgoingContent(message, subject, input.body);
+    result = rawSend(account, message, sender);
+  } catch (error) {
+    if (registered) discardDraft(message);
+    throw error;
+  }
+  sendOutgoing(message);
+  return result;
+}
+
+function sendReplyOperation(request) {
+  var input = requireObject(request.input, "input");
+  requireSendConfirmation(request, input);
+  var expectedTo = validatedSendAddresses(input.expectedTo, "expectedTo", true);
+  var expectedCc = validatedSendAddresses(input.expectedCc, "expectedCc", false);
+  var expectedBcc = validatedSendAddresses(input.expectedBcc, "expectedBcc", false);
+  var resolved = resolveMessage(input.message, request.policy);
+  var sender = ensureSender(resolved.account, input.from, request.policy);
+  var reply = Mail.reply(resolved.message, {
+    openingWindow: false,
+    replyToAll: input.replyAll === true,
+  });
+  var result;
+  try {
+    reply.visible = false;
+    reply.sender = sender;
+    reply.content = input.body;
+    requireExactOutgoingContent(reply, undefined, input.body);
+    if (
+      !equalAddressSets(expectedTo, sortedRecipientAddresses(reply, "toRecipients")) ||
+      !equalAddressSets(expectedCc, sortedRecipientAddresses(reply, "ccRecipients")) ||
+      !equalAddressSets(expectedBcc, sortedRecipientAddresses(reply, "bccRecipients"))
+    ) {
+      fail("SEND_TARGET_CHANGED", "Mail.app resolved reply recipients that differ from the approved recipients.");
+    }
+    result = rawSend(resolved.account, reply, sender);
+  } catch (error) {
+    discardDraft(reply);
+    throw error;
+  }
+  sendOutgoing(reply);
+  return result;
+}
+
 var OPERATIONS = {
   listAccounts: listAccountsOperation,
   listMailboxes: listMailboxesOperation,
@@ -927,6 +1081,8 @@ var OPERATIONS = {
   createDraft: createDraftOperation,
   createReplyDraft: createReplyDraftOperation,
   createForwardDraft: createForwardDraftOperation,
+  sendMessage: sendMessageOperation,
+  sendReply: sendReplyOperation,
 };
 
 function validateRequest(request) {

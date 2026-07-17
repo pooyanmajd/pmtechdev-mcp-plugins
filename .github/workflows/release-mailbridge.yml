@@ -78,12 +78,16 @@ jobs:
         # dist/cli.js, so omitting dev dependencies would audit an empty set.
         run: npm audit
 
-      - name: Validate Mailbridge JXA and no-send boundary
+      - name: Validate Mailbridge JXA and explicit-send boundary
         run: |
           node --check plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
           osacompile -l JavaScript -o "$RUNNER_TEMP/mailbridge.scpt" plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
           test "$MAILBRIDGE_MODE" = "read-only"
-          ! grep -qE 'mail_send_draft|Mail\.send|sendDraft' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
+          grep -q 'sendMessageOperation' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          grep -q 'sendReplyOperation' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js
+          grep -q 'mail_send_message' plugins/mailbridge-mcp/dist/cli.js
+          grep -q 'mail_send_reply' plugins/mailbridge-mcp/dist/cli.js
+          ! grep -qE 'mail_send_draft|sendDraft|sendForward' plugins/mailbridge-mcp/runtime/mailbridge.jxa.js plugins/mailbridge-mcp/dist/cli.js
 
       - name: Verify committed plugin bundle
         run: git diff --exit-code -- plugins/mailbridge-mcp/dist

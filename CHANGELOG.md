@@ -4,6 +4,13 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-17
+
+- Added Mailbridge's separately gated, allowlisted, confirmed send capability for attachment-free new messages and replies.
+- Preserved legacy `full` mode as non-send to avoid privilege escalation during upgrades.
+- Added a dedicated outbound-mail design/security review, fixed-dispatcher contract tests, explicit send annotations, and unknown-outcome retry protection.
+- Updated plugin, marketplace, privacy, security, release, and safe-use documentation for the new boundary.
+
 ## [0.1.2] - 2026-07-17
 
 - Replaced the retired Node.js 20 CI lane with Node.js 22 and 24 macOS coverage, using Node.js 24 for releases.
@@ -22,6 +29,7 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 - Added a validated plugin starter and catalog-aware scaffolder.
 - Added Mailbridge MCP as the first independently packaged plugin.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.2
 [0.1.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.0

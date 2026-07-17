@@ -23027,7 +23027,7 @@ var StdioServerTransport = class {
 };
 
 // src/config.ts
-var MAILBRIDGE_MODES = ["read-only", "drafts", "full"];
+var MAILBRIDGE_MODES = ["read-only", "drafts", "full", "send"];
 var CONFIG_LIMITS = Object.freeze({
   maxResults: 100,
   maxBodyChars: 5e5,
@@ -23053,7 +23053,7 @@ function parseMode(value) {
   if (MAILBRIDGE_MODES.includes(value)) {
     return value;
   }
-  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, or full.");
+  throw new ConfigError("MAILBRIDGE_MODE must be read-only, drafts, full, or send.");
 }
 function parsePositiveInteger(name, value, fallback, maximum) {
   if (value === void 0 || value.trim() === "") {
@@ -23083,9 +23083,16 @@ function parseAllowedAccounts(value) {
   return [...new Set(accounts)];
 }
 function loadConfig(env = process.env) {
+  const mode = parseMode(env.MAILBRIDGE_MODE);
+  const allowedAccounts = parseAllowedAccounts(env.MAILBRIDGE_ALLOWED_ACCOUNTS);
+  if (mode === "send" && allowedAccounts === void 0) {
+    throw new ConfigError(
+      "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send."
+    );
+  }
   return {
-    mode: parseMode(env.MAILBRIDGE_MODE),
-    allowedAccounts: parseAllowedAccounts(env.MAILBRIDGE_ALLOWED_ACCOUNTS),
+    mode,
+    allowedAccounts,
     maxResults: parsePositiveInteger(
       "MAILBRIDGE_MAX_RESULTS",
       env.MAILBRIDGE_MAX_RESULTS,
@@ -23117,6 +23124,9 @@ var MAILBRIDGE_ERROR_CODES = [
   "READ_ONLY",
   "AUTOMATION_BUSY",
   "MUTATION_OUTCOME_UNKNOWN",
+  "SEND_REJECTED",
+  "SEND_CONTENT_CHANGED",
+  "SEND_TARGET_CHANGED",
   "TIMEOUT",
   "MAIL_AUTOMATION_ERROR",
   "INVALID_INPUT",
@@ -23135,6 +23145,9 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
   AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
+  SEND_REJECTED: "Apple Mail did not accept the message for sending.",
+  SEND_CONTENT_CHANGED: "Apple Mail changed the approved outgoing content before sending.",
+  SEND_TARGET_CHANGED: "Apple Mail resolved reply recipients that differ from the approved recipients.",
   TIMEOUT: "Apple Mail did not complete the operation before the configured timeout.",
   MAIL_AUTOMATION_ERROR: "Apple Mail could not complete the requested operation.",
   INVALID_INPUT: "The tool input is invalid.",
@@ -23193,6 +23206,10 @@ var ERROR_CODES = /* @__PURE__ */ new Set([
   "INVALID_ID",
   "INVALID_REQUEST",
   "ACCOUNT_NOT_ALLOWED",
+  "MUTATION_OUTCOME_UNKNOWN",
+  "SEND_REJECTED",
+  "SEND_CONTENT_CHANGED",
+  "SEND_TARGET_CHANGED",
   "ATTACHMENT_TOO_LARGE",
   "UNSUPPORTED_ATTACHMENT",
   "TIMEOUT",
@@ -23542,6 +23559,13 @@ function requiredText(value, name, maximum = 2e5) {
   }
   return value;
 }
+function requiredNonBlankText(value, name, maximum = 2e5) {
+  const text = requiredText(value, name, maximum);
+  if (!text.trim()) {
+    throw new MailBridgeError("INVALID_REQUEST", `${name} must not be empty.`);
+  }
+  return text;
+}
 function normalizedEmail(value, name = "Email address") {
   const email3 = optionalText(value, name, 320)?.toLowerCase();
   if (!email3 || !/^[^\s<>@]+@[^\s<>@]+$/.test(email3)) {
@@ -23831,6 +23855,55 @@ var AppleMailBridge = class {
     });
     return this.mapDraft(raw);
   }
+  async sendMessage(input) {
+    if (input.confirmed !== true) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
+    }
+    if (this.allowedAccounts.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+    }
+    const account = decodeMailId("account", input.accountId);
+    const from = this.validateSender(input.from);
+    const to = normalizeAddressList(input.to, "to");
+    if (to.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "A message requires at least one To recipient.");
+    }
+    const raw = await this.request("sendMessage", {
+      account,
+      from,
+      to,
+      cc: normalizeAddressList(input.cc, "cc"),
+      bcc: normalizeAddressList(input.bcc, "bcc"),
+      subject: requiredText(input.subject, "subject", 998),
+      body: requiredNonBlankText(input.body, "body"),
+      confirmed: true
+    });
+    return this.mapSend(raw);
+  }
+  async sendReply(input) {
+    if (input.confirmed !== true) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires explicit confirmation.");
+    }
+    if (this.allowedAccounts.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "Sending requires an explicit account allowlist.");
+    }
+    const message = decodeMailId("message", input.messageId);
+    const expectedTo = normalizeAddressList(input.expectedTo, "expectedTo");
+    if (expectedTo.length === 0) {
+      throw new MailBridgeError("INVALID_REQUEST", "A reply requires at least one expected To recipient.");
+    }
+    const raw = await this.request("sendReply", {
+      message,
+      from: this.validateSender(input.from),
+      expectedTo,
+      expectedCc: normalizeAddressList(input.expectedCc, "expectedCc"),
+      expectedBcc: normalizeAddressList(input.expectedBcc, "expectedBcc"),
+      replyAll: input.replyAll ?? false,
+      body: requiredNonBlankText(input.body, "body"),
+      confirmed: true
+    });
+    return this.mapSend(raw);
+  }
   validateSender(value) {
     const sender = normalizedEmail(value, "from");
     if (this.allowedAccounts.length > 0 && !this.allowedAccounts.includes(sender)) {
@@ -23849,6 +23922,18 @@ var AppleMailBridge = class {
       from: raw.sender,
       subject: raw.subject,
       sent: raw.sent
+    };
+  }
+  mapSend(raw) {
+    if (raw.acceptedForSending !== true) {
+      throw new MailBridgeError("SEND_REJECTED", "Mail.app did not accept the message for sending.");
+    }
+    return {
+      accountId: accountId(raw),
+      from: raw.sender,
+      subject: raw.subject,
+      recipients: raw.recipients,
+      acceptedForSending: true
     };
   }
 };
@@ -31857,6 +31942,30 @@ var createForwardDraftInputSchema = external_exports.object({
   bcc: recipients.default([]),
   body: external_exports.string().max(MAX_OUTGOING_BODY_CHARS).default("")
 }).strict().refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
+var confirmedSend = external_exports.literal(true).describe(
+  "Must be true only after the user has explicitly approved the exact recipients, subject, and body."
+);
+var substantiveBody = external_exports.string().max(MAX_OUTGOING_BODY_CHARS).refine((body) => body.trim().length > 0, { message: "A non-empty message body is required." });
+var sendMessageInputSchema = external_exports.object({
+  accountId: opaqueId.describe("Opaque account ID returned by mail_list_accounts."),
+  from: emailAddress.describe("Sender address belonging to the selected and allowed account."),
+  to: recipients.default([]),
+  cc: recipients.default([]),
+  bcc: recipients.default([]),
+  subject: external_exports.string().max(MAX_SUBJECT_CHARS).default(""),
+  body: substantiveBody,
+  confirmed: confirmedSend
+}).strict().refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
+var sendReplyInputSchema = external_exports.object({
+  messageId: opaqueId.describe("Opaque source message ID returned by mail_search_messages."),
+  from: emailAddress.describe("Sender address belonging to an allowed account."),
+  expectedTo: recipients.min(1).describe("Exact To recipients approved by the user; Mail's resolved reply must match."),
+  expectedCc: recipients.default([]).describe("Exact CC recipients approved by the user; Mail's resolved reply must match."),
+  expectedBcc: recipients.default([]).describe("Exact BCC recipients approved by the user; Mail's resolved reply must match."),
+  replyAll: external_exports.boolean().default(false),
+  body: substantiveBody,
+  confirmed: confirmedSend
+}).strict();
 var toolOutputSchema = external_exports.object({
   ok: external_exports.boolean(),
   data: external_exports.unknown().optional(),
@@ -31875,7 +31984,9 @@ var inputSchemas = {
   mail_set_message_state: setMessageStateInputSchema,
   mail_create_draft: createDraftInputSchema,
   mail_create_reply_draft: createReplyDraftInputSchema,
-  mail_create_forward_draft: createForwardDraftInputSchema
+  mail_create_forward_draft: createForwardDraftInputSchema,
+  mail_send_message: sendMessageInputSchema,
+  mail_send_reply: sendReplyInputSchema
 };
 
 // src/server/service.ts
@@ -31933,7 +32044,12 @@ var MailbridgeToolService = class {
     }
   }
   requireFullMode() {
-    if (this.config.mode !== "full") {
+    if (this.config.mode !== "full" && this.config.mode !== "send") {
+      throw new MailbridgeError("READ_ONLY");
+    }
+  }
+  requireSendMode() {
+    if (this.config.mode !== "send") {
       throw new MailbridgeError("READ_ONLY");
     }
   }
@@ -32022,6 +32138,16 @@ var MailbridgeToolService = class {
         const input = parseInput(createForwardDraftInputSchema, rawInput);
         return this.runMutation(async () => this.bridge.createForwardDraft(input));
       }
+      case "mail_send_message": {
+        this.requireSendMode();
+        const input = parseInput(sendMessageInputSchema, rawInput);
+        return this.runMutation(async () => this.bridge.sendMessage(input));
+      }
+      case "mail_send_reply": {
+        this.requireSendMode();
+        const input = parseInput(sendReplyInputSchema, rawInput);
+        return this.runMutation(async () => this.bridge.sendReply(input));
+      }
     }
   }
 };
@@ -32044,6 +32170,12 @@ var DRAFT_ANNOTATIONS = Object.freeze({
   destructiveHint: false,
   idempotentHint: false,
   openWorldHint: false
+});
+var SEND_ANNOTATIONS = Object.freeze({
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true
 });
 var TOOL_DEFINITIONS = [
   {
@@ -32091,37 +32223,51 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_set_message_state",
     title: "Set Message State",
-    description: "Set the read and/or flagged state of one Apple Mail message. This is available only in full mode and cannot move or delete mail.",
+    description: "Set the read and/or flagged state of one Apple Mail message. This is available in full or send mode and cannot move or delete mail.",
     inputSchema: inputSchemas.mail_set_message_state,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS
   },
   {
     name: "mail_create_draft",
     title: "Create Mail Draft",
-    description: "Create a new unsent Apple Mail draft. Available in drafts or full mode; this tool never sends the draft.",
+    description: "Create a new unsent Apple Mail draft. Available in drafts, full, or send mode; this tool never sends the draft.",
     inputSchema: inputSchemas.mail_create_draft,
     annotations: DRAFT_ANNOTATIONS
   },
   {
     name: "mail_create_reply_draft",
     title: "Create Reply Draft",
-    description: "Create an unsent reply or reply-all draft for an existing message. Available in drafts or full mode; this tool never sends the draft.",
+    description: "Create an unsent reply or reply-all draft for an existing message. Available in drafts, full, or send mode; this tool never sends the draft.",
     inputSchema: inputSchemas.mail_create_reply_draft,
     annotations: DRAFT_ANNOTATIONS
   },
   {
     name: "mail_create_forward_draft",
     title: "Create Forward Draft",
-    description: "Create an unsent forward draft for an existing message and explicit recipients. Available in drafts or full mode; this tool never sends the draft.",
+    description: "Create an unsent forward draft for an existing message and explicit recipients. Available in drafts, full, or send mode; this tool never sends the draft.",
     inputSchema: inputSchemas.mail_create_forward_draft,
     annotations: DRAFT_ANNOTATIONS
+  },
+  {
+    name: "mail_send_message",
+    title: "Send Mail Message",
+    description: "Send one new attachment-free message through Apple Mail. This irreversible external action requires send mode, an explicit account allowlist, and confirmed=true after the exact recipients, subject, and body have been approved. Success means Mail accepted the message for sending, not that the recipient received it.",
+    inputSchema: inputSchemas.mail_send_message,
+    annotations: SEND_ANNOTATIONS
+  },
+  {
+    name: "mail_send_reply",
+    title: "Send Mail Reply",
+    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. This irreversible external action requires send mode, an explicit account allowlist, and confirmed=true. Success means Mail accepted the reply for sending, not that the recipient received it.",
+    inputSchema: inputSchemas.mail_send_reply,
+    annotations: SEND_ANNOTATIONS
   }
 ];
 
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.1.2"
+  version: "0.2.0"
 });
 function createMailbridgeServer(bridge, config2) {
   const server = new McpServer(SERVER_INFO, {

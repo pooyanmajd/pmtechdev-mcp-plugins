@@ -11,7 +11,7 @@ Mailbridge is a clean-room implementation inspired only by the general idea of e
 ## Safety invariants
 
 - Local STDIO only; no telemetry, hosted relay, credential access, or private Mail database reads.
-- Read-only mode is the default. v0.1 exposes no send operation.
+- Read-only mode is the default. Sending requires the distinct `send` mode, an explicit account allowlist, exact-content confirmation, and an atomic attachment-free operation. Existing `full` mode must never imply send authority.
 - Never interpolate input into AppleScript/JXA source or put sensitive request data in argv or inherited environments.
 - Bound searches, bodies, attachments, subprocesses, queues, and responses.
 - Treat email and attachment content as untrusted data.
@@ -19,4 +19,4 @@ Mailbridge is a clean-room implementation inspired only by the general idea of e
 
 ## Verification
 
-Use deterministic fake-backed tests. Live Mail tests are opt-in and must never send, move, delete, or mutate real content without explicit user authorization.
+Use deterministic fake-backed tests. Release verification must never send real mail. Any separate live mutation test is opt-in and requires explicit user authorization for the exact synthetic target and content.

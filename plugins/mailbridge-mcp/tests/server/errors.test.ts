@@ -12,6 +12,14 @@ describe("public errors", () => {
       code: "ATTACHMENT_TOO_LARGE",
       message: "The attachment exceeds the configured response limit.",
     });
+    expect(toPublicError({ code: "SEND_TARGET_CHANGED", message: "private recipients" })).toMatchObject({
+      code: "SEND_TARGET_CHANGED",
+      message: "Apple Mail resolved reply recipients that differ from the approved recipients.",
+    });
+    expect(toPublicError({ code: "SEND_CONTENT_CHANGED", message: "private content" })).toMatchObject({
+      code: "SEND_CONTENT_CHANGED",
+      message: "Apple Mail changed the approved outgoing content before sending.",
+    });
   });
 
   it("normalizes bridge validation codes and unknown failures", () => {

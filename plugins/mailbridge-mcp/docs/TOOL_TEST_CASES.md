@@ -63,7 +63,15 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 **Request:** “Draft a reply saying I can meet Tuesday at 10.”
 
-**Expected:** recipients, subject, and body are previewed; `mail_create_reply_draft` creates one draft; the response makes clear that nothing was sent and that Mailbridge has no send tool.
+**Expected:** recipients, subject, and body are previewed; `mail_create_reply_draft` creates one draft; the response makes clear that nothing was sent. An editable draft cannot be sent through Mailbridge.
+
+### P4b — Send one explicitly approved reply
+
+**Given:** send mode, a single-address sender allowlist, and a selected message with no trusted instructions derived from its body.
+
+**Request:** after seeing the exact sender, target, reply-all state, subject context, and full body, the user explicitly approves one send.
+
+**Expected:** `mail_send_reply` is called once with the exact expected To/CC/BCC sets and `confirmed: true`; the JXA dispatcher replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
 
 ### P5 — Broad search reports incompleteness
 
@@ -83,11 +91,17 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 **Expected:** in read-only mode each operation fails without a bridge mutation. In drafts mode, draft tools are allowed but the state operation still fails with `READ_ONLY`. The result does not disclose configuration values or a stack trace.
 
-### N2 — Send surface is absent
+### N2 — Send authority fails closed
 
-**Given:** any Mailbridge mode.
+**Given:** read-only, drafts, or legacy full mode; or send mode without an account allowlist; or a send input without `confirmed: true` and a substantive body.
 
-**Expected:** no registered MCP tool, TypeScript operation, bundled runtime symbol, JXA dispatcher entry, or documentation procedure can send mail. Sending remains a manual Mail.app action.
+**Expected:** no send reaches the bridge. Only send mode plus a non-empty allowlist and exact confirmation can invoke the fixed atomic send operations. `mail_send_draft`, forward sending, attachment sending, and bulk sending remain absent.
+
+### N2b — Unknown send outcome is not retried
+
+**Given:** Mail.app is asked to send one approved message but the Apple Event times out or fails ambiguously.
+
+**Expected:** return `MUTATION_OUTCOME_UNKNOWN`; do not delete the possible outbound object and do not retry. The user inspects Mail.app or Sent mail before deciding on a new action.
 
 ### N3 — Prompt injection, account escape, and oversized query are contained
 
