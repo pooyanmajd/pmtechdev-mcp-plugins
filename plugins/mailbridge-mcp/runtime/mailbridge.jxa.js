@@ -1129,9 +1129,10 @@ function createDraftOperation(request) {
   });
   var registered = false;
   try {
-    addAddressing(draft, input);
+    // See sendMessageOperation: addressing must happen after the push.
     Mail.outgoingMessages.push(draft);
     registered = true;
+    addAddressing(draft, input);
     persistDraft(draft);
     return rawDraft(account, draft, sender, false);
   } catch (error) {
@@ -1235,10 +1236,11 @@ function equalAddressSets(left, right) {
   return true;
 }
 
-function isMailReplyTerminalSpace(actualBody, expectedBody) {
-  // Mail.app appends this one space to script-created replies on current macOS.
-  // Treat only that fixed serialization artifact as equivalent; quotes,
-  // signatures, line breaks, and every other content change still fail closed.
+function isMailScriptedTerminalSpace(actualBody, expectedBody) {
+  // Mail.app appends this one space to any script-created outgoing message
+  // (new message or reply) on current macOS. Treat only that fixed
+  // serialization artifact as equivalent; quotes, signatures, line breaks,
+  // and every other content change still fail closed.
   return (
     actualBody.length === expectedBody.length + 1 &&
     actualBody.slice(0, expectedBody.length) === expectedBody &&
@@ -1246,9 +1248,9 @@ function isMailReplyTerminalSpace(actualBody, expectedBody) {
   );
 }
 
-function requireExactOutgoingContent(message, expectedSubject, expectedBody, allowReplyTerminalSpace) {
+function requireExactOutgoingContent(message, expectedSubject, expectedBody) {
   var actualBody = stringProperty(message, "content", "");
-  if (allowReplyTerminalSpace === true && isMailReplyTerminalSpace(actualBody, expectedBody)) {
+  if (isMailScriptedTerminalSpace(actualBody, expectedBody)) {
     actualBody = expectedBody;
   }
   if (
@@ -1293,9 +1295,12 @@ function sendMessageOperation(request) {
   var registered = false;
   var result;
   try {
-    addAddressing(message, input);
+    // Mail.app does not expose toRecipients/ccRecipients/bccRecipients as
+    // settable arrays on a freshly constructed OutgoingMessage until it has
+    // been pushed into Mail.outgoingMessages; addressing must happen after.
     Mail.outgoingMessages.push(message);
     registered = true;
+    addAddressing(message, input);
     requireExactOutgoingContent(message, subject, input.body);
     result = rawSend(account, message, sender);
   } catch (error) {
@@ -1323,7 +1328,7 @@ function sendReplyOperation(request) {
     reply.visible = false;
     reply.sender = sender;
     reply.content = input.body;
-    requireExactOutgoingContent(reply, undefined, input.body, true);
+    requireExactOutgoingContent(reply, undefined, input.body);
     if (
       !equalAddressSets(expectedTo, sortedRecipientAddresses(reply, "toRecipients")) ||
       !equalAddressSets(expectedCc, sortedRecipientAddresses(reply, "ccRecipients")) ||

@@ -19,6 +19,47 @@ function account(id: string, addresses: string[], mailboxes: unknown[] = []): Re
   };
 }
 
+/**
+ * Mirrors a real Mail.app quirk: a freshly constructed OutgoingMessage does not
+ * expose toRecipients/ccRecipients/bccRecipients as usable arrays until the
+ * message has been pushed into Mail.outgoingMessages. Accessing them earlier
+ * throws, matching the real "undefined is not an object" TypeError this fake
+ * is designed to catch as a regression.
+ */
+function outgoingMessageFake(overrideContent?: string): {
+  OutgoingMessage: (properties: Record<string, unknown>) => Record<string, unknown>;
+  outgoingMessages: unknown[];
+} {
+  const registered = new WeakSet<object>();
+  const outgoingMessages: unknown[] = [];
+  const realPush = outgoingMessages.push.bind(outgoingMessages);
+  outgoingMessages.push = (...items: unknown[]): number => {
+    for (const item of items) registered.add(item as object);
+    return realPush(...items);
+  };
+
+  function OutgoingMessage(properties: Record<string, unknown>): Record<string, unknown> {
+    const recipients = { bcc: [] as unknown[], cc: [] as unknown[], to: [] as unknown[] };
+    const message: Record<string, unknown> = {
+      ...properties,
+      ...(overrideContent === undefined ? {} : { content: overrideContent }),
+      id: "outgoing-1",
+    };
+    const guarded = (list: unknown[]): unknown[] => {
+      if (!registered.has(message)) {
+        throw new TypeError("undefined is not an object (evaluating 'draft[propertyName].push')");
+      }
+      return list;
+    };
+    Object.defineProperty(message, "toRecipients", { enumerable: true, get: () => guarded(recipients.to) });
+    Object.defineProperty(message, "ccRecipients", { enumerable: true, get: () => guarded(recipients.cc) });
+    Object.defineProperty(message, "bccRecipients", { enumerable: true, get: () => guarded(recipients.bcc) });
+    return message;
+  }
+
+  return { OutgoingMessage, outgoingMessages };
+}
+
 function harness(
   accounts: unknown[],
   mailOverrides: Record<string, unknown> = {},
@@ -762,17 +803,82 @@ describe("fixed JXA dispatcher contract", () => {
     });
   });
 
+  it("creates a draft, adding recipients only after Mail registers the message", () => {
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake();
+    const savedDrafts: unknown[] = [];
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage,
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages,
+      save: (draft: unknown) => {
+        savedDrafts.push(draft);
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("createDraft", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Draft subject",
+      body: "Draft body",
+    }));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: { draftKey: "outgoing-1", sender: "sender@example.com", subject: "Draft subject", sent: false },
+    });
+    expect(outgoingMessages).toHaveLength(1);
+    expect(savedDrafts).toHaveLength(1);
+  });
+
+  it("tolerates Mail's terminal-space serialization on a new message the same as on a reply", () => {
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake();
+    const sentMessages: unknown[] = [];
+    const rawOutgoingMessage = OutgoingMessage;
+    const runtime = harness([account("account-1", ["sender@example.com"])], {
+      OutgoingMessage: (properties: Record<string, unknown>) => {
+        const message = rawOutgoingMessage(properties);
+        let content = `${typeof properties.content === "string" ? properties.content : ""} `;
+        Object.defineProperty(message, "content", {
+          enumerable: true,
+          get: () => content,
+          set: (value: string) => { content = value; },
+        });
+        return message;
+      },
+      ToRecipient: ({ address }: { address: string }) => ({ address }),
+      CcRecipient: ({ address }: { address: string }) => ({ address }),
+      BccRecipient: ({ address }: { address: string }) => ({ address }),
+      outgoingMessages,
+      send: (message: unknown) => {
+        sentMessages.push(message);
+        return true;
+      },
+      delete: () => undefined,
+    });
+    runtime.request(request("sendMessage", {
+      account: { accountKey: "account-1" },
+      from: "sender@example.com",
+      to: ["recipient@example.com"],
+      subject: "Approved subject",
+      body: "Approved body",
+      confirmed: true,
+    }, ["sender@example.com"]));
+
+    expect(JSON.parse(runtime.context.run([]))).toMatchObject({
+      ok: true,
+      result: { acceptedForSending: true },
+    });
+    expect(sentMessages).toHaveLength(1);
+  });
+
   it("atomically sends a confirmed attachment-free message from an allowlisted account", () => {
-    const outgoingMessages: unknown[] = [];
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake();
     const sentMessages: unknown[] = [];
     const runtime = harness([account("account-1", ["sender@example.com"])], {
-      OutgoingMessage: (properties: Record<string, unknown>) => ({
-        ...properties,
-        id: "outgoing-1",
-        toRecipients: [],
-        ccRecipients: [],
-        bccRecipients: [],
-      }),
+      OutgoingMessage,
       ToRecipient: ({ address }: { address: string }) => ({ address }),
       CcRecipient: ({ address }: { address: string }) => ({ address }),
       BccRecipient: ({ address }: { address: string }) => ({ address }),
@@ -959,18 +1065,13 @@ describe("fixed JXA dispatcher contract", () => {
 
   it("accepts an exact confirmed send after prompted authorization without an allowlist", () => {
     const sentMessages: unknown[] = [];
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake();
     const runtime = harness([account("account-1", ["sender@example.com"])], {
-      OutgoingMessage: (properties: Record<string, unknown>) => ({
-        ...properties,
-        id: "outgoing-1",
-        toRecipients: [],
-        ccRecipients: [],
-        bccRecipients: [],
-      }),
+      OutgoingMessage,
       ToRecipient: ({ address }: { address: string }) => ({ address }),
       CcRecipient: ({ address }: { address: string }) => ({ address }),
       BccRecipient: ({ address }: { address: string }) => ({ address }),
-      outgoingMessages: [],
+      outgoingMessages,
       send: (message: unknown) => {
         sentMessages.push(message);
         return true;
@@ -995,19 +1096,13 @@ describe("fixed JXA dispatcher contract", () => {
 
   it("fails closed if Mail changes approved outgoing content before submission", () => {
     let sendCalls = 0;
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake("Mail-added content");
     const runtime = harness([account("account-1", ["sender@example.com"])], {
-      OutgoingMessage: (properties: Record<string, unknown>) => ({
-        ...properties,
-        content: "Mail-added content",
-        id: "outgoing-1",
-        toRecipients: [],
-        ccRecipients: [],
-        bccRecipients: [],
-      }),
+      OutgoingMessage,
       ToRecipient: ({ address }: { address: string }) => ({ address }),
       CcRecipient: ({ address }: { address: string }) => ({ address }),
       BccRecipient: ({ address }: { address: string }) => ({ address }),
-      outgoingMessages: [],
+      outgoingMessages,
       send: () => {
         sendCalls += 1;
         return true;
@@ -1031,18 +1126,13 @@ describe("fixed JXA dispatcher contract", () => {
   });
 
   it("reports an unknown outcome instead of encouraging a duplicate send", () => {
+    const { OutgoingMessage, outgoingMessages } = outgoingMessageFake();
     const runtime = harness([account("account-1", ["sender@example.com"])], {
-      OutgoingMessage: (properties: Record<string, unknown>) => ({
-        ...properties,
-        id: "outgoing-1",
-        toRecipients: [],
-        ccRecipients: [],
-        bccRecipients: [],
-      }),
+      OutgoingMessage,
       ToRecipient: ({ address }: { address: string }) => ({ address }),
       CcRecipient: ({ address }: { address: string }) => ({ address }),
       BccRecipient: ({ address }: { address: string }) => ({ address }),
-      outgoingMessages: [],
+      outgoingMessages,
       send: () => {
         throw new Error("ambiguous Apple Event failure");
       },

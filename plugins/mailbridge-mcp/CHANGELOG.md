@@ -13,7 +13,8 @@ All notable changes to this project will be documented here. The format is based
 
 - A pending prompted-mode send confirmation no longer occupies a slot in the bounded automation queue for its full duration; only the actual Mail.app/JXA call is now serialized, so unrelated read calls can no longer be starved into `AUTOMATION_BUSY` while a human is still reviewing a send.
 - Elicitation confirmation prompts now join review sections with a Unicode line separator instead of an ordinary newline, since Codex renders ordinary newlines in elicitation messages as collapsed whitespace.
-- Reply-send verification now tolerates the single trailing ASCII space current Mail.app appends to script-set reply bodies as the only permitted post-approval body difference; every other change still fails closed with `SEND_CONTENT_CHANGED`.
+- Send/reply verification now tolerates the single trailing ASCII space current Mail.app appends to any script-set outgoing body as the only permitted post-approval body difference; every other change still fails closed with `SEND_CONTENT_CHANGED`.
+- `mail_send_message` and `mail_create_draft` no longer fail with a generic `MAIL_AUTOMATION_ERROR` against real Mail.app: a freshly constructed outgoing message did not expose settable recipient lists until after being registered with `Mail.outgoingMessages`, so addressing must happen after that registration, not before. Every JXA-level fake in the test suite that constructs an outgoing message now enforces this same ordering, closing a gap where the 100%-fake-backed suite could not previously catch it.
 
 ## [0.3.0] - 2026-07-17
 
