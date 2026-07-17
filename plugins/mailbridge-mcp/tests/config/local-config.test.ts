@@ -168,4 +168,60 @@ describe("readLocalPreferences / writeLocalPreferences (real filesystem)", () =>
     expect(() => loadConfig(env)).not.toThrow();
     expect(loadConfig(env)).toMatchObject({ mode: "send", allowedAccounts: ["sender@example.com"] });
   });
+
+  it("refuses to write through a pre-existing symlinked config directory", async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-local-config-"));
+    tempDirs.push(parent);
+    const realTarget = path.join(parent, "real-target");
+    const linkedDir = path.join(parent, "mailbridge-mcp");
+    await fs.mkdir(realTarget, { recursive: true, mode: 0o755 });
+    await fs.symlink(realTarget, linkedDir, "dir");
+    const filePath = path.join(linkedDir, "preferences.json");
+
+    await expect(
+      writeLocalPreferences(filePath, { mode: "send", allowedAccounts: ["person@example.com"] }),
+    ).rejects.toThrow(/symlink/i);
+
+    // Confirms the fix actually prevents the chmod-follows-symlink issue: the real
+    // target directory's permissions must be untouched, and nothing was written into it.
+    const targetStat = await fs.stat(realTarget);
+    expect(targetStat.mode & 0o777).toBe(0o755);
+    expect(await fs.readdir(realTarget)).toEqual([]);
+  });
+
+  it("refuses to read through a pre-existing symlinked preferences file", async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-local-config-"));
+    tempDirs.push(parent);
+    const realFile = path.join(parent, "elsewhere.json");
+    await fs.writeFile(
+      realFile,
+      JSON.stringify({
+        schemaVersion: 1,
+        mode: "send",
+        allowedAccounts: ["attacker@example.com"],
+        updatedAt: new Date(0).toISOString(),
+      }),
+    );
+    const configDir = path.join(parent, "mailbridge-mcp");
+    await fs.mkdir(configDir, { recursive: true });
+    const linkedFile = path.join(configDir, "preferences.json");
+    await fs.symlink(realFile, linkedFile, "file");
+
+    const result = await readLocalPreferences(linkedFile);
+
+    expect(result.preferences).toBeUndefined();
+    expect(result.diagnostic).toBeDefined();
+  });
+
+  it("refuses an oversized preferences file without loading its full content", async () => {
+    const filePath = await tempPreferencesPath();
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const oversized = `{"padding":"${"x".repeat(128 * 1024)}"}`;
+    await fs.writeFile(filePath, oversized);
+
+    const result = await readLocalPreferences(filePath);
+
+    expect(result.preferences).toBeUndefined();
+    expect(result.diagnostic).toBeDefined();
+  });
 });

@@ -189,6 +189,8 @@ Do not put passwords or provider tokens in either value. Before every send call,
 
 An explicitly set `MAILBRIDGE_MODE` or `MAILBRIDGE_ALLOWED_ACCOUNTS` environment variable always wins. When a variable is left unset, Mailbridge falls back to a local, per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under `XDG_CONFIG_HOME` if you set it to an absolute path), written with `0600` permissions and never part of this git repository or the shared plugin package. Use `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` to read and save it — an assistant using Mailbridge should list your real accounts, ask which to allow and at what mode, and save that choice through these tools rather than editing any configuration file directly. Saving preferences does not change the currently running server; the change takes effect on the next restart or reconnect, and each tool response reports whether an environment variable is shadowing the field you just set.
 
+`mailbridge_set_access_preferences` cannot set `send` mode. A model-supplied `confirmed: true` is not an independently verified human confirmation, so this tool is restricted to `read-only`/`drafts`/`full`/`prompted`; enabling unconfirmed direct sending stays a manual environment-variable change you make yourself (see [Configuration](#configuration) above).
+
 The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
 
 ## MCP tools
@@ -288,6 +290,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `SEND_CONTENT_CHANGED` | Mail changed the constructed outgoing subject or body before submission. Review Mail settings and do not bypass the check. |
 | `SEND_TARGET_CHANGED` | Mail resolved reply recipients that differ from the approved sets. Refresh the message, show the new target, and request fresh approval. |
 | `AUTOMATION_BUSY` | Wait for the current Mail automation operation to finish before retrying. |
+| `CONFIRMATION_BUSY` | Too many send confirmations are already pending. Wait for one to resolve before requesting another. |
 | `INVALID_INPUT` / `INVALID_CONFIG` | Correct the bounded tool arguments or environment configuration; do not retry unchanged. |
 | `ACCOUNT_NOT_ALLOWED` | Select an account in `MAILBRIDGE_ALLOWED_ACCOUNTS`, or deliberately revise the allowlist before restart. |
 | `ATTACHMENT_TOO_LARGE` / `RESPONSE_TOO_LARGE` | Request less data; Mailbridge will not bypass its configured limits. |

@@ -408,6 +408,53 @@ describe("MailbridgeToolService", () => {
     expect(held.spies.sendMessage).toHaveBeenCalledOnce();
   });
 
+  it("bounds concurrent pending send confirmations independently of the automation queue", async () => {
+    const held = createFakeBridge();
+    const releasers: Array<(value: boolean) => void> = [];
+    const confirmMailSend = vi.fn().mockImplementation(
+      () => new Promise<boolean>((resolve) => { releasers.push(resolve); }),
+    );
+    const service = new MailbridgeToolService(held.bridge, config("prompted"), confirmMailSend);
+    const sendInput = (subject: string): Record<string, unknown> => ({
+      accountId: "account:1",
+      from: "me@example.com",
+      to: ["person@example.com"],
+      subject,
+      body: "Body",
+      confirmed: true,
+    });
+
+    const first = service.invoke("mail_send_message", sendInput("First"));
+    await vi.waitFor(() => {
+      expect(confirmMailSend).toHaveBeenCalledTimes(1);
+    });
+
+    const second = service.invoke("mail_send_message", sendInput("Second"));
+    const third = await service.invoke("mail_send_message", sendInput("Third"));
+
+    expect(parsedResult(third)).toMatchObject({ ok: false, error: { code: "CONFIRMATION_BUSY" } });
+    expect(held.spies.sendMessage).not.toHaveBeenCalled();
+
+    function releaseAt(index: number): void {
+      const release = releasers[index];
+      if (!release) throw new Error(`Expected a pending confirmation at index ${index}.`);
+      release(true);
+    }
+
+    releaseAt(0);
+    const firstResult = await first;
+    expect(firstResult.isError).not.toBe(true);
+
+    await vi.waitFor(() => {
+      expect(confirmMailSend).toHaveBeenCalledTimes(2);
+    });
+    releaseAt(1);
+    const secondResult = await second;
+    expect(secondResult.isError).not.toBe(true);
+
+    expect(held.spies.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ["mail_search_messages", { limit: 101 }],
     ["mail_get_message", { messageId: "" }],

@@ -2873,20 +2873,20 @@ var require_compile = __commonJS({
     var util_1 = require_util();
     var validate_1 = require_validate();
     var SchemaEnv = class {
-      constructor(env) {
+      constructor(env2) {
         var _a3;
         this.refs = {};
         this.dynamicAnchors = {};
         let schema;
-        if (typeof env.schema == "object")
-          schema = env.schema;
-        this.schema = env.schema;
-        this.schemaId = env.schemaId;
-        this.root = env.root || this;
-        this.baseId = (_a3 = env.baseId) !== null && _a3 !== void 0 ? _a3 : (0, resolve_1.normalizeId)(schema === null || schema === void 0 ? void 0 : schema[env.schemaId || "$id"]);
-        this.schemaPath = env.schemaPath;
-        this.localRefs = env.localRefs;
-        this.meta = env.meta;
+        if (typeof env2.schema == "object")
+          schema = env2.schema;
+        this.schema = env2.schema;
+        this.schemaId = env2.schemaId;
+        this.root = env2.root || this;
+        this.baseId = (_a3 = env2.baseId) !== null && _a3 !== void 0 ? _a3 : (0, resolve_1.normalizeId)(schema === null || schema === void 0 ? void 0 : schema[env2.schemaId || "$id"]);
+        this.schemaPath = env2.schemaPath;
+        this.localRefs = env2.localRefs;
+        this.meta = env2.meta;
         this.$async = schema === null || schema === void 0 ? void 0 : schema.$async;
         this.refs = {};
       }
@@ -3070,15 +3070,15 @@ var require_compile = __commonJS({
           baseId = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schId);
         }
       }
-      let env;
+      let env2;
       if (typeof schema != "boolean" && schema.$ref && !(0, util_1.schemaHasRulesButRef)(schema, this.RULES)) {
         const $ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schema.$ref);
-        env = resolveSchema.call(this, root, $ref);
+        env2 = resolveSchema.call(this, root, $ref);
       }
       const { schemaId } = this.opts;
-      env = env || new SchemaEnv({ schema, schemaId, root, baseId });
-      if (env.schema !== env.root.schema)
-        return env;
+      env2 = env2 || new SchemaEnv({ schema, schemaId, root, baseId });
+      if (env2.schema !== env2.root.schema)
+        return env2;
       return void 0;
     }
   }
@@ -4566,8 +4566,8 @@ var require_ref = __commonJS({
       schemaType: "string",
       code(cxt) {
         const { gen, schema: $ref, it } = cxt;
-        const { baseId, schemaEnv: env, validateName, opts, self } = it;
-        const { root } = env;
+        const { baseId, schemaEnv: env2, validateName, opts, self } = it;
+        const { root } = env2;
         if (($ref === "#" || $ref === "#/") && baseId === root.baseId)
           return callRootRef();
         const schOrEnv = compile_1.resolveRef.call(self, root, baseId, $ref);
@@ -4577,8 +4577,8 @@ var require_ref = __commonJS({
           return callValidate(schOrEnv);
         return inlineRefSchema(schOrEnv);
         function callRootRef() {
-          if (env === root)
-            return callRef(cxt, validateName, env, env.$async);
+          if (env2 === root)
+            return callRef(cxt, validateName, env2, env2.$async);
           const rootName = gen.scopeValue("root", { ref: root });
           return callRef(cxt, (0, codegen_1._)`${rootName}.validate`, root, root.$async);
         }
@@ -4608,14 +4608,14 @@ var require_ref = __commonJS({
     exports.getValidate = getValidate;
     function callRef(cxt, v, sch, $async) {
       const { gen, it } = cxt;
-      const { allErrors, schemaEnv: env, opts } = it;
+      const { allErrors, schemaEnv: env2, opts } = it;
       const passCxt = opts.passContext ? names_1.default.this : codegen_1.nil;
       if ($async)
         callAsyncRef();
       else
         callSyncRef();
       function callAsyncRef() {
-        if (!env.$async)
+        if (!env2.$async)
           throw new Error("async schema referenced by sync schema");
         const valid = gen.let("valid");
         gen.try(() => {
@@ -23092,9 +23092,9 @@ function parseAllowedAccounts(value) {
   }
   return [...new Set(accounts)];
 }
-function loadConfig(env = process.env) {
-  const mode = parseMode(env.MAILBRIDGE_MODE);
-  const allowedAccounts = parseAllowedAccounts(env.MAILBRIDGE_ALLOWED_ACCOUNTS);
+function loadConfig(env2 = process.env) {
+  const mode = parseMode(env2.MAILBRIDGE_MODE);
+  const allowedAccounts = parseAllowedAccounts(env2.MAILBRIDGE_ALLOWED_ACCOUNTS);
   if (mode === "send" && allowedAccounts === void 0) {
     throw new ConfigError(
       "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send."
@@ -23102,7 +23102,7 @@ function loadConfig(env = process.env) {
   }
   const timeoutMs = parsePositiveInteger(
     "MAILBRIDGE_TIMEOUT_MS",
-    env.MAILBRIDGE_TIMEOUT_MS,
+    env2.MAILBRIDGE_TIMEOUT_MS,
     CONFIG_DEFAULTS.timeoutMs,
     CONFIG_LIMITS.timeoutMs
   );
@@ -23112,20 +23112,20 @@ function loadConfig(env = process.env) {
     allowedAccounts,
     maxResults: parsePositiveInteger(
       "MAILBRIDGE_MAX_RESULTS",
-      env.MAILBRIDGE_MAX_RESULTS,
+      env2.MAILBRIDGE_MAX_RESULTS,
       CONFIG_DEFAULTS.maxResults,
       CONFIG_LIMITS.maxResults
     ),
     maxBodyChars: parsePositiveInteger(
       "MAILBRIDGE_MAX_BODY_CHARS",
-      env.MAILBRIDGE_MAX_BODY_CHARS,
+      env2.MAILBRIDGE_MAX_BODY_CHARS,
       CONFIG_DEFAULTS.maxBodyChars,
       CONFIG_LIMITS.maxBodyChars
     ),
     timeoutMs,
     searchBudgetMs: parsePositiveInteger(
       "MAILBRIDGE_SEARCH_BUDGET_MS",
-      env.MAILBRIDGE_SEARCH_BUDGET_MS,
+      env2.MAILBRIDGE_SEARCH_BUDGET_MS,
       Math.min(CONFIG_DEFAULTS.searchBudgetMs, maximumSearchBudgetMs),
       maximumSearchBudgetMs
     )
@@ -23155,7 +23155,8 @@ var MAILBRIDGE_ERROR_CODES = [
   "ATTACHMENT_TOO_LARGE",
   "UNSUPPORTED_ATTACHMENT",
   "RESPONSE_TOO_LARGE",
-  "LOCAL_PREFERENCES_WRITE_FAILED"
+  "LOCAL_PREFERENCES_WRITE_FAILED",
+  "CONFIRMATION_BUSY"
 ];
 var SAFE_ERROR_MESSAGES = Object.freeze({
   UNSUPPORTED_PLATFORM: "Mailbridge requires macOS with Apple Mail available.",
@@ -23179,7 +23180,8 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   ATTACHMENT_TOO_LARGE: "The attachment exceeds the configured response limit.",
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",
-  LOCAL_PREFERENCES_WRITE_FAILED: "Mailbridge could not save local access preferences to disk."
+  LOCAL_PREFERENCES_WRITE_FAILED: "Mailbridge could not save local access preferences to disk.",
+  CONFIRMATION_BUSY: "Mailbridge has too many send confirmations already pending. Wait before retrying."
 });
 var MailbridgeError = class extends Error {
   constructor(code, message = SAFE_ERROR_MESSAGES[code], options) {
@@ -23215,8 +23217,11 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as process4 from "process";
 var LOCAL_PREFERENCES_SCHEMA_VERSION = 1;
 var MAX_ALLOWED_ACCOUNTS = 50;
+var MAX_PREFERENCES_FILE_BYTES = 64 * 1024;
+var UNREADABLE_DIAGNOSTIC = "The saved local preferences file could not be read (corrupt or inaccessible); using built-in defaults until it's fixed or replaced.";
 var ALLOWED_ACCOUNTS_EMAIL_PATTERN = /^[^\s<>@,]+@[^\s<>@,]+$/;
 var allowlistEmail = external_exports.string().trim().toLowerCase().min(1).max(320).regex(ALLOWED_ACCOUNTS_EMAIL_PATTERN);
 var MAX_LOCAL_ALLOWED_ACCOUNTS = MAX_ALLOWED_ACCOUNTS;
@@ -23229,35 +23234,70 @@ var localPreferencesFileSchema = external_exports.object({
 function isEnvValueSet(value) {
   return value !== void 0 && value.trim() !== "";
 }
-function resolveLocalConfigPath(env = process.env, homeDir = os.homedir()) {
-  const xdg = env.XDG_CONFIG_HOME;
+function resolveLocalConfigPath(env2 = process4.env, homeDir = os.homedir()) {
+  const xdg = env2.XDG_CONFIG_HOME;
   const baseDir = isEnvValueSet(xdg) && path.isAbsolute(xdg) ? xdg : path.join(homeDir, "Library", "Application Support");
   return path.join(baseDir, "mailbridge-mcp", "preferences.json");
 }
-function defaultLocalPreferencesContext(env = process.env, homeDir = os.homedir()) {
+function defaultLocalPreferencesContext(env2 = process4.env, homeDir = os.homedir()) {
   return {
-    path: resolveLocalConfigPath(env, homeDir),
+    path: resolveLocalConfigPath(env2, homeDir),
     envOverrides: {
-      mode: isEnvValueSet(env.MAILBRIDGE_MODE),
-      allowedAccounts: isEnvValueSet(env.MAILBRIDGE_ALLOWED_ACCOUNTS)
+      mode: isEnvValueSet(env2.MAILBRIDGE_MODE),
+      allowedAccounts: isEnvValueSet(env2.MAILBRIDGE_ALLOWED_ACCOUNTS)
     }
   };
 }
-function overlayLocalPreferences(env, preferences) {
+function overlayLocalPreferences(env2, preferences) {
   if (preferences === void 0) {
-    return { ...env };
+    return { ...env2 };
   }
   return {
-    ...env,
-    MAILBRIDGE_MODE: isEnvValueSet(env.MAILBRIDGE_MODE) ? env.MAILBRIDGE_MODE : preferences.mode,
-    MAILBRIDGE_ALLOWED_ACCOUNTS: isEnvValueSet(env.MAILBRIDGE_ALLOWED_ACCOUNTS) ? env.MAILBRIDGE_ALLOWED_ACCOUNTS : preferences.allowedAccounts.join(",")
+    ...env2,
+    MAILBRIDGE_MODE: isEnvValueSet(env2.MAILBRIDGE_MODE) ? env2.MAILBRIDGE_MODE : preferences.mode,
+    MAILBRIDGE_ALLOWED_ACCOUNTS: isEnvValueSet(env2.MAILBRIDGE_ALLOWED_ACCOUNTS) ? env2.MAILBRIDGE_ALLOWED_ACCOUNTS : preferences.allowedAccounts.join(",")
   };
 }
 function isEnoent(error51) {
   return typeof error51 === "object" && error51 !== null && "code" in error51 && error51.code === "ENOENT";
 }
+async function lstatIfExists(targetPath) {
+  try {
+    return await fs.lstat(targetPath);
+  } catch (error51) {
+    if (isEnoent(error51)) return void 0;
+    throw error51;
+  }
+}
+function isOwnedByCurrentProcess(stat) {
+  const uid = typeof process4.getuid === "function" ? process4.getuid() : void 0;
+  return uid === void 0 || stat.uid === uid;
+}
+async function assertSafeExistingPath(targetPath, expected) {
+  const stat = await lstatIfExists(targetPath);
+  if (stat === void 0) return;
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to follow a symlink at the local preferences path: ${targetPath}`);
+  }
+  if (expected === "directory" ? !stat.isDirectory() : !stat.isFile()) {
+    throw new Error(`Expected a plain ${expected} at the local preferences path: ${targetPath}`);
+  }
+  if (!isOwnedByCurrentProcess(stat)) {
+    throw new Error(`Refusing to use a local preferences path owned by another user: ${targetPath}`);
+  }
+}
 async function readLocalPreferences(filePath) {
   try {
+    const stat = await lstatIfExists(filePath);
+    if (stat === void 0) {
+      return { preferences: void 0, diagnostic: void 0 };
+    }
+    if (stat.isSymbolicLink() || !stat.isFile() || !isOwnedByCurrentProcess(stat)) {
+      return { preferences: void 0, diagnostic: UNREADABLE_DIAGNOSTIC };
+    }
+    if (stat.size > MAX_PREFERENCES_FILE_BYTES) {
+      return { preferences: void 0, diagnostic: UNREADABLE_DIAGNOSTIC };
+    }
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = localPreferencesFileSchema.parse(JSON.parse(raw));
     return {
@@ -23272,10 +23312,7 @@ async function readLocalPreferences(filePath) {
     if (isEnoent(error51)) {
       return { preferences: void 0, diagnostic: void 0 };
     }
-    return {
-      preferences: void 0,
-      diagnostic: "The saved local preferences file could not be read (corrupt or inaccessible); using built-in defaults until it's fixed or replaced."
-    };
+    return { preferences: void 0, diagnostic: UNREADABLE_DIAGNOSTIC };
   }
 }
 async function writeLocalPreferences(filePath, input, now = () => (/* @__PURE__ */ new Date()).toISOString()) {
@@ -23287,8 +23324,11 @@ async function writeLocalPreferences(filePath, input, now = () => (/* @__PURE__ 
     updatedAt: now()
   });
   const dir = path.dirname(filePath);
+  await assertSafeExistingPath(dir, "directory");
   await fs.mkdir(dir, { recursive: true, mode: 448 });
+  await assertSafeExistingPath(dir, "directory");
   await fs.chmod(dir, 448);
+  await assertSafeExistingPath(filePath, "file");
   const tempPath = path.join(dir, `.preferences-${randomUUID()}.json.tmp`);
   try {
     await fs.writeFile(tempPath, `${JSON.stringify(record2, null, 2)}
@@ -23498,7 +23538,7 @@ import { tmpdir } from "os";
 import { basename, dirname as dirname2, join as join2, resolve } from "path";
 
 // ../../packages/mcp-kit/src/index.ts
-import process4 from "process";
+import process5 from "process";
 var DEFAULT_CHILD_ENVIRONMENT_KEYS = [
   "HOME",
   "TMPDIR",
@@ -23508,7 +23548,7 @@ var DEFAULT_CHILD_ENVIRONMENT_KEYS = [
   "USER",
   "LOGNAME"
 ];
-function buildMinimalChildEnvironment(source = process4.env, fixed = { PATH: "/usr/bin:/bin" }) {
+function buildMinimalChildEnvironment(source = process5.env, fixed = { PATH: "/usr/bin:/bin" }) {
   const childEnvironment = { ...fixed };
   for (const name of DEFAULT_CHILD_ENVIRONMENT_KEYS) {
     const value = source[name];
@@ -32217,8 +32257,11 @@ var mailbridgeGetAccessPreferencesInputSchema = external_exports.object({}).stri
 var confirmedAccessPreferences = external_exports.literal(true).describe(
   "Must be true only after the exact mode and account list above were shown to and approved by the user in chat."
 );
+var LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"];
 var mailbridgeSetAccessPreferencesInputSchema = external_exports.object({
-  mode: external_exports.enum(MAILBRIDGE_MODES).describe("Global Mailbridge permission level to save for future sessions."),
+  mode: external_exports.enum(LOCALLY_SETTABLE_MODES).describe(
+    "Global Mailbridge permission level to save for future sessions. Direct send mode cannot be set through this tool; it requires a manual environment-variable change by the user."
+  ),
   allowedAccounts: external_exports.array(allowlistEmail).min(1).max(MAX_LOCAL_ALLOWED_ACCOUNTS).describe(
     "Complete replacement list of Mail.app account email addresses to allow. Replaces any previously saved list; this is not a delta/append."
   ),
@@ -32251,6 +32294,7 @@ var inputSchemas = {
 
 // src/server/service.ts
 var MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
+var MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
 function success2(data) {
   const structuredContent = { ok: true, data };
   return {
@@ -32292,6 +32336,10 @@ var MailbridgeToolService = class {
   confirmMailSend;
   localPreferences;
   automationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS);
+  // Separate from automationQueue: bounds concurrent pending client confirmations
+  // (which can each wait minutes on a human) independently of Mail.app/JXA calls,
+  // so neither can starve the other.
+  confirmationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
   async invoke(name, rawInput) {
     try {
       return success2(await this.execute(name, rawInput));
@@ -32318,10 +32366,17 @@ var MailbridgeToolService = class {
     if (this.confirmMailSend === void 0) {
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
     }
+    const confirmMailSend = this.confirmMailSend;
     let approved;
     try {
-      approved = await this.confirmMailSend(confirmation);
-    } catch {
+      approved = await this.confirmationQueue.run(
+        () => confirmMailSend(confirmation),
+        () => new MailbridgeError("CONFIRMATION_BUSY")
+      );
+    } catch (error51) {
+      if (error51 instanceof MailbridgeError && error51.code === "CONFIRMATION_BUSY") {
+        throw error51;
+      }
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
     }
     if (!approved) {
@@ -32674,7 +32729,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mailbridge_set_access_preferences",
     title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot set direct send mode: that requires a manual environment-variable change by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     allowedModes: ALL_MODES

@@ -64,7 +64,7 @@ describe("MailbridgeToolService — access preferences", () => {
     const service = new MailbridgeToolService(bridge, config("read-only"), undefined, context);
 
     const result = await service.invoke("mailbridge_set_access_preferences", {
-      mode: "send",
+      mode: "prompted",
       allowedAccounts: ["work@example.com", "unknown@example.com"],
       confirmed: true,
     });
@@ -74,7 +74,7 @@ describe("MailbridgeToolService — access preferences", () => {
       ok: true,
       data: {
         saved: true,
-        mode: "send",
+        mode: "prompted",
         allowedAccounts: ["work@example.com", "unknown@example.com"],
         verification: {
           performed: true,
@@ -91,11 +91,27 @@ describe("MailbridgeToolService — access preferences", () => {
       ok: true,
       data: {
         found: true,
-        savedMode: "send",
+        savedMode: "prompted",
         savedAllowedAccounts: ["work@example.com", "unknown@example.com"],
         activeMode: "read-only",
       },
     });
+  });
+
+  it("rejects an attempt to save direct send mode, since a model-set confirmed:true is not an independent human confirmation", async () => {
+    const { bridge } = createFakeBridge();
+    const context = await localPreferencesContext();
+    const service = new MailbridgeToolService(bridge, config("read-only"), undefined, context);
+
+    const result = await service.invoke("mailbridge_set_access_preferences", {
+      mode: "send",
+      allowedAccounts: ["person@example.com"],
+      confirmed: true,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+    await expect(fs.access(context.path)).rejects.toThrow();
   });
 
   it("still saves when live account verification fails, and says so instead of blocking", async () => {
@@ -123,12 +139,12 @@ describe("MailbridgeToolService — access preferences", () => {
     const service = new MailbridgeToolService(bridge, config("read-only"), undefined, context);
 
     const unconfirmed = await service.invoke("mailbridge_set_access_preferences", {
-      mode: "send",
+      mode: "prompted",
       allowedAccounts: ["person@example.com"],
       confirmed: false,
     });
     const empty = await service.invoke("mailbridge_set_access_preferences", {
-      mode: "send",
+      mode: "prompted",
       allowedAccounts: [],
       confirmed: true,
     });
@@ -154,7 +170,7 @@ describe("MailbridgeToolService — access preferences", () => {
     const service = new MailbridgeToolService(bridge, config("read-only"), undefined, context);
 
     const result = await service.invoke("mailbridge_set_access_preferences", {
-      mode: "send",
+      mode: "prompted",
       allowedAccounts: ["person@example.com"],
       confirmed: true,
     });

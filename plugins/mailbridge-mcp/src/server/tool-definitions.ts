@@ -162,7 +162,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mailbridge_set_access_preferences",
     title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot set direct send mode: that requires a manual environment-variable change by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     allowedModes: ALL_MODES,

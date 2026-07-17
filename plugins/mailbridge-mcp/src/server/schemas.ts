@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { MAILBRIDGE_MODES } from "../config.js";
 import { allowlistEmail, MAX_LOCAL_ALLOWED_ACCOUNTS } from "../local-config.js";
 
 const OPAQUE_ID_MAX_CHARS = 4_096;
@@ -181,9 +180,19 @@ const confirmedAccessPreferences = z.literal(true).describe(
   "Must be true only after the exact mode and account list above were shown to and approved by the user in chat.",
 );
 
+// Deliberately excludes "send": a model-supplied confirmed:true is not an independently
+// verified human confirmation, so this tool must never be able to grant standing,
+// unconfirmed send authority. Elevating to direct send mode stays a manual,
+// human-performed environment-variable change — see docs/SEND_SECURITY_REVIEW.md.
+const LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"] as const;
+
 export const mailbridgeSetAccessPreferencesInputSchema = z
   .object({
-    mode: z.enum(MAILBRIDGE_MODES).describe("Global Mailbridge permission level to save for future sessions."),
+    mode: z
+      .enum(LOCALLY_SETTABLE_MODES)
+      .describe(
+        "Global Mailbridge permission level to save for future sessions. Direct send mode cannot be set through this tool; it requires a manual environment-variable change by the user.",
+      ),
     allowedAccounts: z
       .array(allowlistEmail)
       .min(1)

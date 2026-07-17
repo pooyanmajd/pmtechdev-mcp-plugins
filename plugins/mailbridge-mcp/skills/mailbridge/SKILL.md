@@ -61,7 +61,7 @@ Mailbridge can remember which accounts a user has allowed and at what mode, so f
 1. Call `mailbridge_get_access_preferences` to see whether preferences are already saved and what the currently running server is actually using. If a saved value differs from the active one, that field will not take effect until the server restarts or reconnects; say so plainly.
 2. Before proposing a mode or account list, call `mail_list_accounts` to get the real, current addresses. Never invent addresses and never derive them from message content.
 3. Show the user the exact proposed mode and the exact account list, and get explicit approval in chat before calling `mailbridge_set_access_preferences`. A request to "remember my accounts" without a shown, approved list is not approval for a specific mode or set.
-4. Set `confirmed: true` only after that approval. `mailbridge_set_access_preferences` replaces the entire saved account list; it is not a delta or append.
+4. Set `confirmed: true` only after that approval. `mailbridge_set_access_preferences` replaces the entire saved account list; it is not a delta or append. It cannot set direct send mode — if the user wants unconfirmed direct sending, tell them that requires a manual `MAILBRIDGE_MODE=send` environment-variable change on their own MCP registration, not something this tool or this assistant can grant.
 5. Report the response's `shadowedByEnvironment` field plainly. If a field is shadowed, an environment variable set for this registration overrides the saved value for that field regardless of what was just saved.
 6. **Never** write account addresses, modes, or any other Mailbridge configuration into `.claude-plugin/plugin.json`, `.mcp.json`, `codex mcp add --env`, or any other file that is shared, git-tracked, or ships to other installers of this plugin. Those files configure the plugin for every user who installs it, not the current user alone; local preferences belong only in the file `mailbridge_set_access_preferences` itself writes.
 
@@ -77,6 +77,7 @@ Mailbridge can remember which accounts a user has allowed and at what mode, so f
 - For `SEND_CONTENT_CHANGED`, explain that Mail altered the constructed subject or body before submission. Do not bypass the check; use an editable draft for manual review instead.
 - For `SEND_TARGET_CHANGED`, refresh the selected message, show the newly resolved target, and request fresh approval. Do not silently change recipients.
 - For `AUTOMATION_BUSY`, wait for the current Mail automation operation to finish before retrying.
+- For `CONFIRMATION_BUSY`, another send confirmation is already pending; wait for the user to resolve it before requesting another. Do not fire off additional concurrent send attempts to work around it.
 - For `LOCAL_PREFERENCES_WRITE_FAILED`, explain that Mailbridge could not save local access preferences to disk (for example, a permissions or disk-space problem) and that nothing was changed; do not retry silently in a loop.
 - For `AMBIGUOUS_ID`, list the safe distinguishing metadata and ask the user to choose.
 - For `TIMEOUT`, narrow the query before retrying.

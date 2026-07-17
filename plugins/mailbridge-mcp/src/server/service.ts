@@ -31,6 +31,7 @@ import {
 
 type StructuredJson = Record<string, unknown>;
 const MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
+const MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
 
 export type MailSendConfirmation =
   | {
@@ -117,6 +118,10 @@ function parseInput<T extends z.ZodType>(schema: T, input: unknown): z.output<T>
 
 export class MailbridgeToolService {
   private readonly automationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS);
+  // Separate from automationQueue: bounds concurrent pending client confirmations
+  // (which can each wait minutes on a human) independently of Mail.app/JXA calls,
+  // so neither can starve the other.
+  private readonly confirmationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
 
   public constructor(
     private readonly bridge: MailBridge,
@@ -155,11 +160,18 @@ export class MailbridgeToolService {
     if (this.confirmMailSend === undefined) {
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
     }
+    const confirmMailSend = this.confirmMailSend;
 
     let approved: boolean;
     try {
-      approved = await this.confirmMailSend(confirmation);
-    } catch {
+      approved = await this.confirmationQueue.run(
+        () => confirmMailSend(confirmation),
+        () => new MailbridgeError("CONFIRMATION_BUSY"),
+      );
+    } catch (error: unknown) {
+      if (error instanceof MailbridgeError && error.code === "CONFIRMATION_BUSY") {
+        throw error;
+      }
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
     }
     if (!approved) {
