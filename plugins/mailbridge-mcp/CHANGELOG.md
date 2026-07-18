@@ -4,6 +4,8 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-18
+
 ### Security
 
 - `mail_send_message`, `mail_send_reply`, and `mailbridge_set_access_preferences` now declare `_meta["anthropic/requiresUserInteraction"]: true` in their `tools/list` entries. Claude Code v2.1.199 or later shows those tools' permission prompt on every call — saved allow rules, `acceptEdits`, `auto`, and `bypassPermissions` do not skip it, and `dontAsk` denies the call — restoring a per-call human gate for allowlisted direct `send` registrations and for standing access-preference grants. Other hosts and older clients ignore the annotation; Mailbridge's own runtime mode, allowlist, and confirmation gates are unchanged and remain authoritative.
@@ -129,7 +131,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...v0.3.0

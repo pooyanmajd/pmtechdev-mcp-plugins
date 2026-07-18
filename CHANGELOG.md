@@ -4,12 +4,28 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-18
+
 - Mailbridge's outbound send tools and preference-saving tool now declare the `anthropic/requiresUserInteraction` annotation, so Claude Code v2.1.199 or later prompts on every such call even under allow rules, Auto mode, or Bypass permissions. See the plugin's own changelog for detail.
 - Documented Mailbridge prompted-mode behavior on clients that advertise MCP elicitation but auto-decline the confirmation form without rendering it (currently the Claude Code desktop app), and added a user-scoped allowlisted `send`-mode registration recipe for those surfaces. See the plugin's own changelog for detail.
+
+## [0.4.1] - 2026-07-18
+
 - Corrected public installation and release documentation to identify `0.2.1` as the supported immutable Mailbridge release.
-- Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.
+- Corrected `SEND_NOT_CONFIRMED` messaging and guidance so it no longer implies a human saw and declined an elicitation prompt when a client may have resolved it without rendering one.
+
+## [0.4.0] - 2026-07-17
+
 - Added Mailbridge local, per-user access-preference tools; fixed a prompted-send confirmation from occupying the automation queue for its full pending duration; and fixed `mail_send_message`/`mail_create_draft` failing against real Mail.app due to an outgoing-message addressing/registration ordering bug. See the plugin's own changelog for detail.
 - Hardened Mailbridge's local preferences: the tool that saves them can no longer set direct send mode, pending send confirmations are now bounded independently of Mail automation, and the preferences file is read/written with symlink and size safeguards. Corrected a `PRIVACY.md` claim about preference data never being transmitted.
+
+## [0.3.0] - 2026-07-17
+
+- Changed the bundled Codex and Claude Code plugins to prompted mode, requiring a fresh exact-content client confirmation before each successful send while preserving fail-closed behavior and the non-send meaning of legacy `full` mode.
+
+## [0.2.2] - 2026-07-17
+
+- Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.
 
 ## [0.2.1] - 2026-07-17
 
@@ -43,7 +59,12 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 - Added a validated plugin starter and catalog-aware scaffolder.
 - Added Mailbridge MCP as the first independently packaged plugin.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.1.2
