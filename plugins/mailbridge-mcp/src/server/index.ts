@@ -16,7 +16,7 @@ export interface CreateMailbridgeServerOptions {
 
 export const SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.4.0",
+  version: "0.4.1",
 });
 
 function displayJson(value: string | readonly string[]): string {

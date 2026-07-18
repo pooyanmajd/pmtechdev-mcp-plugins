@@ -23166,7 +23166,7 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
   CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required send confirmation.",
-  SEND_NOT_CONFIRMED: "The user did not confirm this send operation.",
+  SEND_NOT_CONFIRMED: "No explicit approval was received for this send; no message was submitted.",
   AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
   SEND_REJECTED: "Apple Mail did not accept the message for sending.",
@@ -32739,7 +32739,7 @@ var TOOL_DEFINITIONS = [
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.4.0"
+  version: "0.4.1"
 });
 function displayJson(value) {
   return JSON.stringify(value).replace(

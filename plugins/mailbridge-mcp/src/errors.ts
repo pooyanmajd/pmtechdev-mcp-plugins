@@ -34,7 +34,7 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
   CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required send confirmation.",
-  SEND_NOT_CONFIRMED: "The user did not confirm this send operation.",
+  SEND_NOT_CONFIRMED: "No explicit approval was received for this send; no message was submitted.",
   AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
   SEND_REJECTED: "Apple Mail did not accept the message for sending.",
