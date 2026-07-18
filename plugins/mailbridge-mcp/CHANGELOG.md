@@ -6,7 +6,7 @@ All notable changes to this project will be documented here. The format is based
 
 ### Changed
 
-- Documented a third prompted-mode client category confirmed in the field: a client can advertise elicitation support yet auto-decline the confirmation form without rendering it (the Claude Code desktop app does this today; verified 2026-07-18 against 0.4.1), surfacing as `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. The README's Claude Code section now includes a user-scoped, allowlisted direct `send`-mode registration recipe as the reviewed workaround for such surfaces, with matching guidance in the troubleshooting table and the bundled skill.
+- Documented a third prompted-mode client category confirmed in the field: a client can advertise elicitation support yet auto-decline the confirmation form without rendering it (the Claude Code desktop app does this today; verified 2026-07-18 against 0.4.1), surfacing as `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. The README's Claude Code section now includes a user-scoped, allowlisted direct `send`-mode registration recipe as the reviewed workaround for such surfaces, with matching guidance in the troubleshooting table and the bundled skill. The recipe explicitly warns that the client's tool-approval prompt is not a per-send guarantee — allow rules, Auto mode, and Bypass permissions skip it, and only the `anthropic/requiresUserInteraction` tool annotation (which Mailbridge does not yet declare) forces a prompt on every call in every mode.
 
 ## [0.4.1] - 2026-07-18
 

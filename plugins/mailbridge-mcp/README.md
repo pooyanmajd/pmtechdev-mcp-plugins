@@ -141,7 +141,7 @@ claude mcp add --scope user mailbridge-send \
   -- node /path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
 ```
 
-New sessions load the extra server alongside the plugin; it exposes only the allowlisted accounts, and in interactive sessions each send still passes through the client's own tool-approval prompt. This is user-local configuration — never write it into a shared or git-tracked file — and it grants the same standing send authority that `mailbridge_set_access_preferences` deliberately refuses to save, so review the send-mode cautions under [Configuration](#configuration) before adding it.
+New sessions load the extra server alongside the plugin, and it exposes only the allowlisted accounts. Do not rely on the client's tool-approval prompt as a per-send gate: Claude Code prompts only while no allow rule covers the tool and the session is in a prompting permission mode — a saved allow rule, Auto mode, and Bypass permissions all skip it. Only a tool that declares the `_meta["anthropic/requiresUserInteraction"]` annotation is prompted on every call in every mode (Claude Code v2.1.199 or later), and Mailbridge does not currently declare it. Treat the registration itself as the standing send authority it is: never add allow rules for its send tools, keep a prompting permission mode while it is loaded, never write it into a shared or git-tracked file, and review the send-mode cautions under [Configuration](#configuration) — this grants exactly what `mailbridge_set_access_preferences` deliberately refuses to save.
 
 For local development, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
 
