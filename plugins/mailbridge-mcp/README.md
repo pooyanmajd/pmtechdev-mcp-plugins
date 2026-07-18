@@ -281,7 +281,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
 | `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, `prompted`, or `send` mode after reviewing the exact authority needed. |
 | `CONFIRMATION_UNAVAILABLE` | Use a client with MCP form elicitation support, create an editable draft instead, or use a reviewed allowlisted direct `send` registration. |
-| `SEND_NOT_CONFIRMED` | The prompted send was declined or cancelled; no message was submitted. |
+| `SEND_NOT_CONFIRMED` | No explicit approval was received — this can mean a human declined, or that the connected client/session could not present the confirmation prompt at all. If no prompt was visible, create a draft instead rather than retrying the same send. |
 | `TIMEOUT` | Narrow the mailbox, date range, query, or result limit before retrying. |
 | Search returns `incomplete: true` | Inspect `stopReasons` and `coverage`. Resume with `nextCursor` and identical filters when present; otherwise narrow to one account or mailbox. A partial result cannot prove absence. |
 | Search returns `cursor_invalidated` | Mailbox ordering changed after the prior page. Restart the same narrowed search once instead of altering or reconstructing the opaque cursor. |

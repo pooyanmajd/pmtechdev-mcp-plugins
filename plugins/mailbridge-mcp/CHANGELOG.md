@@ -4,6 +4,10 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Fixed
+
+- The `SEND_NOT_CONFIRMED` error message, README troubleshooting row, and skill guidance no longer imply that a human explicitly saw and declined the confirmation prompt. An MCP client can resolve the elicitation request with a non-`accept` action without ever rendering a prompt (for example, in a non-interactive or headless session) — this is indistinguishable at the protocol level from a real decline, so `mail_send_message`/`mail_send_reply` were reporting "the user did not confirm" in cases where no user ever saw a prompt. The message now states only what is actually known (no explicit approval was received), and guidance directs the caller to check whether a prompt was visible before retrying, offering `mail_create_draft`/`mail_create_reply_draft` as the fallback that works regardless of client elicitation support.
+
 ## [0.4.0] - 2026-07-17
 
 ### Added

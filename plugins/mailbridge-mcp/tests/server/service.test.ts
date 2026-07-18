@@ -267,7 +267,10 @@ describe("MailbridgeToolService", () => {
     });
     expect(parsedResult(declinedResult)).toMatchObject({
       ok: false,
-      error: { code: "SEND_NOT_CONFIRMED" },
+      error: {
+        code: "SEND_NOT_CONFIRMED",
+        message: "No explicit approval was received for this send; no message was submitted.",
+      },
     });
     expect(declined.spies.sendMessage).not.toHaveBeenCalled();
 
