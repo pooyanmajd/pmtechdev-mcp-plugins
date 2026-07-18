@@ -108,10 +108,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.4.0`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.4.1`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.1
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -124,7 +124,7 @@ The bundled marketplace registrations intentionally expose all accounts configur
 The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh exact-content form elicitation. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.0
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.1
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
