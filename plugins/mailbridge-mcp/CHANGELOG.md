@@ -4,6 +4,10 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- Documented a third prompted-mode client category confirmed in the field: a client can advertise elicitation support yet auto-decline the confirmation form without rendering it (the Claude Code desktop app does this today; verified 2026-07-18 against 0.4.1), surfacing as `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. The README's Claude Code section now includes a user-scoped, allowlisted direct `send`-mode registration recipe as the reviewed workaround for such surfaces, with matching guidance in the troubleshooting table and the bundled skill.
+
 ## [0.4.1] - 2026-07-18
 
 ### Fixed

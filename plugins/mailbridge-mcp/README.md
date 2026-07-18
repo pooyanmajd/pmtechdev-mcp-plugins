@@ -130,6 +130,19 @@ claude plugin install mailbridge-mcp@pmtechdev
 
 Run `/reload-plugins` after installation, then use `/mcp` to confirm that the plugin-provided `mailbridge` server connected. The same host-trust, account-isolation, and model-provider cautions described above apply to Claude Code.
 
+### Claude Code surfaces that never show the send confirmation
+
+Prompted mode needs a Claude Code surface that actually renders MCP form elicitation. Interactive `claude` terminal sessions do. The Claude Code desktop app currently auto-declines the form without displaying it, so every plugin send there fails closed with `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. To send from such a surface, keep the plugin as-is for reads and drafts, and add a separate user-scoped direct registration in allowlisted `send` mode, limited to exactly the addresses you are willing to send from without a per-send form:
+
+```bash
+claude mcp add --scope user mailbridge-send \
+  --env MAILBRIDGE_MODE=send \
+  --env MAILBRIDGE_ALLOWED_ACCOUNTS=you@example.com \
+  -- node /path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
+```
+
+New sessions load the extra server alongside the plugin; it exposes only the allowlisted accounts, and in interactive sessions each send still passes through the client's own tool-approval prompt. This is user-local configuration — never write it into a shared or git-tracked file — and it grants the same standing send authority that `mailbridge_set_access_preferences` deliberately refuses to save, so review the send-mode cautions under [Configuration](#configuration) before adding it.
+
 For local development, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
 
 ```bash
@@ -174,7 +187,7 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after exact-content MCP elicitation |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. The form JSON-encodes untrusted header values and each body line so mail content cannot forge its trusted labels or delimiters. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. The form JSON-encodes untrusted header values and each body line so mail content cannot forge its trusted labels or delimiters. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 
@@ -281,7 +294,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
 | `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, `prompted`, or `send` mode after reviewing the exact authority needed. |
 | `CONFIRMATION_UNAVAILABLE` | Use a client with MCP form elicitation support, create an editable draft instead, or use a reviewed allowlisted direct `send` registration. |
-| `SEND_NOT_CONFIRMED` | No explicit approval was received — this can mean a human declined, or that the connected client/session could not present the confirmation prompt at all. If no prompt was visible, create a draft instead rather than retrying the same send. |
+| `SEND_NOT_CONFIRMED` | No explicit approval was received — this can mean a human declined, or that the connected client/session could not present the confirmation prompt at all (some clients, including the Claude Code desktop app, auto-decline the form without displaying it). If no prompt was visible, create a draft instead rather than retrying the same send, or use a reviewed allowlisted direct `send` registration for a surface that never renders the prompt. |
 | `TIMEOUT` | Narrow the mailbox, date range, query, or result limit before retrying. |
 | Search returns `incomplete: true` | Inspect `stopReasons` and `coverage`. Resume with `nextCursor` and identical filters when present; otherwise narrow to one account or mailbox. A partial result cannot prove absence. |
 | Search returns `cursor_invalidated` | Mailbox ordering changed after the prior page. Restart the same narrowed search once instead of altering or reconstructing the opaque cursor. |

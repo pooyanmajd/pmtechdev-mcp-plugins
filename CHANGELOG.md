@@ -4,6 +4,7 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+- Documented Mailbridge prompted-mode behavior on clients that advertise MCP elicitation but auto-decline the confirmation form without rendering it (currently the Claude Code desktop app), and added a user-scoped allowlisted `send`-mode registration recipe for those surfaces. See the plugin's own changelog for detail.
 - Corrected public installation and release documentation to identify `0.2.1` as the supported immutable Mailbridge release.
 - Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.
 - Added Mailbridge local, per-user access-preference tools; fixed a prompted-send confirmation from occupying the automation queue for its full pending duration; and fixed `mail_send_message`/`mail_create_draft` failing against real Mail.app due to an outgoing-message addressing/registration ordering bug. See the plugin's own changelog for detail.
