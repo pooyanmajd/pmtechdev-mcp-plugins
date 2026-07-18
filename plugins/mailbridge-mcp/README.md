@@ -141,7 +141,7 @@ claude mcp add --scope user mailbridge-send \
   -- node /path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
 ```
 
-New sessions load the extra server alongside the plugin, and it exposes only the allowlisted accounts. Do not rely on the client's tool-approval prompt as a per-send gate: Claude Code prompts only while no allow rule covers the tool and the session is in a prompting permission mode — a saved allow rule, Auto mode, and Bypass permissions all skip it. Only a tool that declares the `_meta["anthropic/requiresUserInteraction"]` annotation is prompted on every call in every mode (Claude Code v2.1.199 or later), and Mailbridge does not currently declare it. Treat the registration itself as the standing send authority it is: never add allow rules for its send tools, keep a prompting permission mode while it is loaded, never write it into a shared or git-tracked file, and review the send-mode cautions under [Configuration](#configuration) — this grants exactly what `mailbridge_set_access_preferences` deliberately refuses to save.
+New sessions load the extra server alongside the plugin, and it exposes only the allowlisted accounts. Do not rely on the client's ordinary tool-approval prompt as a per-send gate: Claude Code prompts only while no allow rule covers the tool and the session is in a prompting permission mode — a saved allow rule, Auto mode, and Bypass permissions all skip it. Mailbridge therefore declares `_meta["anthropic/requiresUserInteraction"]: true` on `mail_send_message`, `mail_send_reply`, and `mailbridge_set_access_preferences`, so Claude Code v2.1.199 or later shows those tools' permission prompt on every call in every mode, with no "don't ask again" option (`dontAsk` mode denies the call instead). Older Claude Code versions and other MCP hosts ignore the annotation, so still treat the registration itself as the standing send authority it is: never add allow rules for its send tools, keep a prompting permission mode while it is loaded, never write it into a shared or git-tracked file, and review the send-mode cautions under [Configuration](#configuration) — this grants exactly what `mailbridge_set_access_preferences` deliberately refuses to save.
 
 For local development, add the local repository root as the marketplace source. Plugin maintainers can validate this payload with:
 
@@ -196,7 +196,7 @@ MAILBRIDGE_MODE=send
 MAILBRIDGE_ALLOWED_ACCOUNTS=sender@example.com
 ```
 
-Do not put passwords or provider tokens in either value. Before every send call, show the exact recipients, subject, and substantive body to the user and obtain explicit approval. A successful tool result means Mail.app accepted the message for sending; it does not prove provider delivery or recipient receipt.
+Do not put passwords or provider tokens in either value. Before every send call, show the exact recipients, subject, and substantive body to the user and obtain explicit approval. The send tools and `mailbridge_set_access_preferences` also declare `_meta["anthropic/requiresUserInteraction"]: true`, so Claude Code v2.1.199 or later forces its permission prompt on every such call even under allow rules, Auto mode, or Bypass permissions; other hosts and older clients ignore the annotation and rely on Mailbridge's runtime gates alone. A successful tool result means Mail.app accepted the message for sending; it does not prove provider delivery or recipient receipt.
 
 ### Local access preferences
 

@@ -4,6 +4,7 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+- Mailbridge's outbound send tools and preference-saving tool now declare the `anthropic/requiresUserInteraction` annotation, so Claude Code v2.1.199 or later prompts on every such call even under allow rules, Auto mode, or Bypass permissions. See the plugin's own changelog for detail.
 - Documented Mailbridge prompted-mode behavior on clients that advertise MCP elicitation but auto-decline the confirmation form without rendering it (currently the Claude Code desktop app), and added a user-scoped allowlisted `send`-mode registration recipe for those surfaces. See the plugin's own changelog for detail.
 - Corrected public installation and release documentation to identify `0.2.1` as the supported immutable Mailbridge release.
 - Clarified supported Codex plugin surfaces, prebuilt installation requirements, and public support paths.

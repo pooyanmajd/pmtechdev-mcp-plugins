@@ -32621,6 +32621,9 @@ var SEND_ANNOTATIONS = Object.freeze({
   idempotentHint: false,
   openWorldHint: true
 });
+var REQUIRES_USER_INTERACTION_META = Object.freeze({
+  "anthropic/requiresUserInteraction": true
+});
 var TOOL_DEFINITIONS = [
   {
     name: "mail_list_accounts",
@@ -32708,7 +32711,8 @@ var TOOL_DEFINITIONS = [
     description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires an explicit account allowlist. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
-    allowedModes: SEND_MODES
+    allowedModes: SEND_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META
   },
   {
     name: "mail_send_reply",
@@ -32716,7 +32720,8 @@ var TOOL_DEFINITIONS = [
     description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. Prompted mode requires a fresh client confirmation; direct send mode requires an explicit account allowlist. Success means Mail accepted the reply for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
-    allowedModes: SEND_MODES
+    allowedModes: SEND_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META
   },
   {
     name: "mailbridge_get_access_preferences",
@@ -32732,7 +32737,8 @@ var TOOL_DEFINITIONS = [
     description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot set direct send mode: that requires a manual environment-variable change by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
-    allowedModes: ALL_MODES
+    allowedModes: ALL_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META
   }
 ];
 
@@ -32812,7 +32818,8 @@ function createMailbridgeServer(bridge, config2, options) {
         description: definition.description,
         inputSchema: definition.inputSchema,
         outputSchema: toolOutputSchema,
-        annotations: definition.annotations
+        annotations: definition.annotations,
+        ...definition._meta === void 0 ? {} : { _meta: definition._meta }
       },
       async (input) => service.invoke(definition.name, input)
     );
