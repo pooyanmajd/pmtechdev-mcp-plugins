@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "mailbridge-mcp",
   "displayName": "Mailbridge MCP",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Safely search, read, draft, and explicitly send mail through accounts configured in macOS Mail.",
   "author": {
     "name": "PMTechDev",
