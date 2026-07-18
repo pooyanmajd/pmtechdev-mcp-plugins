@@ -4,9 +4,13 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+### Security
+
+- `mail_send_message`, `mail_send_reply`, and `mailbridge_set_access_preferences` now declare `_meta["anthropic/requiresUserInteraction"]: true` in their `tools/list` entries. Claude Code v2.1.199 or later shows those tools' permission prompt on every call — saved allow rules, `acceptEdits`, `auto`, and `bypassPermissions` do not skip it, and `dontAsk` denies the call — restoring a per-call human gate for allowlisted direct `send` registrations and for standing access-preference grants. Other hosts and older clients ignore the annotation; Mailbridge's own runtime mode, allowlist, and confirmation gates are unchanged and remain authoritative.
+
 ### Changed
 
-- Documented a third prompted-mode client category confirmed in the field: a client can advertise elicitation support yet auto-decline the confirmation form without rendering it (the Claude Code desktop app does this today; verified 2026-07-18 against 0.4.1), surfacing as `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. The README's Claude Code section now includes a user-scoped, allowlisted direct `send`-mode registration recipe as the reviewed workaround for such surfaces, with matching guidance in the troubleshooting table and the bundled skill. The recipe explicitly warns that the client's tool-approval prompt is not a per-send guarantee — allow rules, Auto mode, and Bypass permissions skip it, and only the `anthropic/requiresUserInteraction` tool annotation (which Mailbridge does not yet declare) forces a prompt on every call in every mode.
+- Documented a third prompted-mode client category confirmed in the field: a client can advertise elicitation support yet auto-decline the confirmation form without rendering it (the Claude Code desktop app does this today; verified 2026-07-18 against 0.4.1), surfacing as `SEND_NOT_CONFIRMED` while reads, search, and drafts keep working. The README's Claude Code section now includes a user-scoped, allowlisted direct `send`-mode registration recipe as the reviewed workaround for such surfaces, with matching guidance in the troubleshooting table and the bundled skill. The recipe explicitly warns that the client's tool-approval prompt is not a per-send guarantee — allow rules, Auto mode, and Bypass permissions skip it, and only the `anthropic/requiresUserInteraction` tool annotation (now declared by Mailbridge's send and preference-saving tools — see Security above) forces a prompt on every call in every mode.
 
 ## [0.4.1] - 2026-07-18
 

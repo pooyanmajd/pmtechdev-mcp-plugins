@@ -71,6 +71,23 @@ describe("MCP server", () => {
     )).toBe(true);
   });
 
+  it("marks exactly the send and preference-saving tools as requiring user interaction", async () => {
+    const { client } = await connect({ ...config, mode: "send", allowedAccounts: ["sender@example.com"] });
+    const { tools } = await client.listTools();
+
+    const flagged = tools
+      .filter((tool) => tool._meta?.["anthropic/requiresUserInteraction"] === true)
+      .map(({ name }) => name);
+    expect(flagged).toEqual(["mail_send_message", "mail_send_reply", "mailbridge_set_access_preferences"]);
+    expect(tools.find(({ name }) => name === "mail_send_message")?._meta).toEqual({
+      "anthropic/requiresUserInteraction": true,
+    });
+    for (const tool of tools) {
+      if (flagged.includes(tool.name)) continue;
+      expect(tool._meta?.["anthropic/requiresUserInteraction"]).toBeUndefined();
+    }
+  });
+
   it("advertises only the tools permitted by the active mode, with access-preference tools always present", async () => {
     const readOnlyTools = [
       "mail_list_accounts",

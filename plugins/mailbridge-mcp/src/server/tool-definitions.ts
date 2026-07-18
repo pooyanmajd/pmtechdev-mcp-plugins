@@ -19,6 +19,16 @@ export interface ToolDefinition {
    * mismatch fails closed (service.ts still rejects) rather than open.
    */
   readonly allowedModes: readonly MailbridgeMode[];
+  /**
+   * Extra `_meta` advertised on this tool's tools/list entry.
+   * `"anthropic/requiresUserInteraction": true` asks Claude Code (v2.1.199+)
+   * to show this tool's permission prompt on every call — saved allow rules,
+   * acceptEdits, auto, and bypassPermissions do not skip it, and dontAsk
+   * denies the call. Other hosts and older clients ignore it, so like
+   * allowedModes this is a client-side consent hint, not the security
+   * boundary; the runtime gates in service.ts stay authoritative.
+   */
+  readonly _meta?: Record<string, unknown>;
 }
 
 const ALL_MODES: readonly MailbridgeMode[] = MAILBRIDGE_MODES;
@@ -52,6 +62,13 @@ const SEND_ANNOTATIONS = Object.freeze({
   destructiveHint: true,
   idempotentHint: false,
   openWorldHint: true,
+});
+
+// Consent is the point of these tools: outbound sends and standing
+// access-preference grants must never be auto-approved by a host on the
+// user's behalf.
+const REQUIRES_USER_INTERACTION_META = Object.freeze({
+  "anthropic/requiresUserInteraction": true,
 });
 
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
@@ -142,6 +159,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META,
   },
   {
     name: "mail_send_reply",
@@ -150,6 +168,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META,
   },
   {
     name: "mailbridge_get_access_preferences",
@@ -166,5 +185,6 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     allowedModes: ALL_MODES,
+    _meta: REQUIRES_USER_INTERACTION_META,
   },
 ];

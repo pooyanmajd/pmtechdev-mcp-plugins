@@ -106,6 +106,7 @@ export function createMailbridgeServer(
         inputSchema: definition.inputSchema,
         outputSchema: toolOutputSchema,
         annotations: definition.annotations,
+        ...(definition._meta === undefined ? {} : { _meta: definition._meta }),
       },
       async (input) => service.invoke(definition.name, input),
     );
