@@ -14,6 +14,7 @@ const readOnlyExpectedTools = new Set([
   "mail_list_accounts",
   "mail_search_messages",
   "mail_get_message",
+  "mail_preview_outbound",
   "mailbridge_get_access_preferences",
   "mailbridge_set_access_preferences",
 ]);

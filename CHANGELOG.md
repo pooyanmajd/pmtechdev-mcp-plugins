@@ -4,6 +4,11 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-17
+
+- Added a Grok Build marketplace catalog (`.grok-plugin/marketplace.json`), Grok plugin manifests, and [Grok install documentation](docs/GROK.md). grok.com public-HTTP connectors are explicitly out of scope.
+- Mailbridge 0.5.0: first-run account scoping, host-agnostic send preview, local-prefs `send` rejection, smaller attachment default, and an opt-in Mail.app compatibility checker. See the plugin changelog.
+
 ## [0.4.2] - 2026-07-18
 
 - Mailbridge's outbound send tools and preference-saving tool now declare the `anthropic/requiresUserInteraction` annotation, so Claude Code v2.1.199 or later prompts on every such call even under allow rules, Auto mode, or Bypass permissions. See the plugin's own changelog for detail.
@@ -59,7 +64,8 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 - Added a validated plugin starter and catalog-aware scaffolder.
 - Added Mailbridge MCP as the first independently packaged plugin.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...v0.4.0

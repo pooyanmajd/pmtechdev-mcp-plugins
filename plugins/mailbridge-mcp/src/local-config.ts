@@ -6,7 +6,11 @@ import * as process from "node:process";
 
 import { z } from "zod";
 
-import { MAILBRIDGE_MODES, type MailbridgeMode } from "./config.js";
+import {
+  LOCALLY_SETTABLE_MODES,
+  isLocallySettableMode,
+  type LocallySettableMode,
+} from "./config.js";
 
 const LOCAL_PREFERENCES_SCHEMA_VERSION = 1;
 const MAX_ALLOWED_ACCOUNTS = 50;
@@ -30,14 +34,14 @@ export const MAX_LOCAL_ALLOWED_ACCOUNTS = MAX_ALLOWED_ACCOUNTS;
 const localPreferencesFileSchema = z
   .object({
     schemaVersion: z.literal(LOCAL_PREFERENCES_SCHEMA_VERSION),
-    mode: z.enum(MAILBRIDGE_MODES),
+    mode: z.enum(LOCALLY_SETTABLE_MODES),
     allowedAccounts: z.array(allowlistEmail).min(1).max(MAX_ALLOWED_ACCOUNTS),
     updatedAt: z.string().datetime({ offset: true }),
   })
   .strict();
 
 export interface LocalMailbridgePreferences {
-  readonly mode: MailbridgeMode;
+  readonly mode: LocallySettableMode;
   readonly allowedAccounts: readonly string[];
   readonly updatedAt: string;
 }
@@ -58,7 +62,7 @@ export interface ReadLocalPreferencesResult {
 }
 
 export interface WriteLocalPreferencesInput {
-  readonly mode: MailbridgeMode;
+  readonly mode: LocallySettableMode;
   readonly allowedAccounts: readonly string[];
 }
 
@@ -164,6 +168,9 @@ export async function readLocalPreferences(filePath: string): Promise<ReadLocalP
 
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = localPreferencesFileSchema.parse(JSON.parse(raw));
+    if (!isLocallySettableMode(parsed.mode)) {
+      return { preferences: undefined, diagnostic: UNREADABLE_DIAGNOSTIC };
+    }
     return {
       preferences: {
         mode: parsed.mode,

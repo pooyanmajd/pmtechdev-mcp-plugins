@@ -65,6 +65,18 @@ claudeMarketplace.plugins.push({
 });
 await writeFile(claudeMarketplacePath, `${JSON.stringify(claudeMarketplace, null, 2)}\n`, "utf8");
 
+const grokMarketplacePath = resolve(root, ".grok-plugin/marketplace.json");
+const grokMarketplace = JSON.parse(await readFile(grokMarketplacePath, "utf8"));
+grokMarketplace.plugins.push({
+  name: normalizedName,
+  description: `A local-first ${displayName} MCP plugin.`,
+  category: "development",
+  source: { type: "local", path: `./plugins/${normalizedName}` },
+  homepage: `https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/${normalizedName}`,
+  keywords: ["mcp", "pmtechdev"]
+});
+await writeFile(grokMarketplacePath, `${JSON.stringify(grokMarketplace, null, 2)}\n`, "utf8");
+
 process.stdout.write(
   [
     `Created plugins/${normalizedName}`,

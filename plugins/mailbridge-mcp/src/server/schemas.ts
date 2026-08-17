@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { LOCALLY_SETTABLE_MODES } from "../config.js";
 import { allowlistEmail, MAX_LOCAL_ALLOWED_ACCOUNTS } from "../local-config.js";
 
 const OPAQUE_ID_MAX_CHARS = 4_096;
@@ -9,6 +10,7 @@ const MAX_SUBJECT_CHARS = 998;
 const MAX_OUTGOING_BODY_CHARS = 200_000;
 const MAX_RECIPIENTS_PER_FIELD = 50;
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const DEFAULT_ATTACHMENT_BYTES = 256 * 1024;
 const MAX_MESSAGE_BATCH = 25;
 
 const opaqueId = z
@@ -38,7 +40,7 @@ export const listMailboxesInputSchema = z
 export const searchMessagesInputSchema = z
   .object({
     query: z.string().trim().min(1).max(MAX_QUERY_CHARS).optional().describe("Plain-text term matched against message metadata."),
-    accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts."),
+    accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible and no allowlist is configured."),
     mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes."),
     scope: z.enum(["inbox", "all"]).default("inbox").describe("Mailbox scope when mailboxId is omitted. Defaults to inbox across allowed accounts."),
     from: z.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
@@ -79,7 +81,7 @@ export const getMessagesInputSchema = z
 export const getAttachmentInputSchema = z
   .object({
     attachmentId: opaqueId.describe("Opaque attachment ID returned by mail_get_message."),
-    maxBytes: z.number().int().min(1).max(MAX_ATTACHMENT_BYTES).default(MAX_ATTACHMENT_BYTES),
+    maxBytes: z.number().int().min(1).max(MAX_ATTACHMENT_BYTES).default(DEFAULT_ATTACHMENT_BYTES),
   })
   .strict();
 
@@ -174,6 +176,33 @@ export const sendReplyInputSchema = z
   })
   .strict();
 
+export const previewOutboundInputSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("message").describe("Preview a new outgoing message."),
+      from: emailAddress.describe("Sender address belonging to an allowed account."),
+      to: recipients.default([]),
+      cc: recipients.default([]),
+      bcc: recipients.default([]),
+      subject: sendSubject.default(""),
+      body: z.string().max(MAX_OUTGOING_BODY_CHARS).default(""),
+    })
+    .strict()
+    .refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] }),
+  z
+    .object({
+      kind: z.literal("reply").describe("Preview a reply or reply-all."),
+      messageId: opaqueId.describe("Opaque source message ID returned by mail_search_messages."),
+      from: emailAddress.describe("Sender address belonging to an allowed account."),
+      expectedTo: recipients.min(1).describe("Exact To recipients that will be shown and later required on send."),
+      expectedCc: recipients.default([]),
+      expectedBcc: recipients.default([]),
+      replyAll: z.boolean().default(false),
+      body: z.string().max(MAX_OUTGOING_BODY_CHARS).default(""),
+    })
+    .strict(),
+]);
+
 export const mailbridgeGetAccessPreferencesInputSchema = z.object({}).strict();
 
 const confirmedAccessPreferences = z.literal(true).describe(
@@ -181,10 +210,7 @@ const confirmedAccessPreferences = z.literal(true).describe(
 );
 
 // Deliberately excludes "send": a model-supplied confirmed:true is not an independently
-// verified human confirmation, so this tool must never be able to grant standing,
-// unconfirmed send authority. Elevating to direct send mode stays a manual,
-// human-performed environment-variable change — see docs/SEND_SECURITY_REVIEW.md.
-const LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"] as const;
+// verified human confirmation. LOCALLY_SETTABLE_MODES is defined in config.ts.
 
 export const mailbridgeSetAccessPreferencesInputSchema = z
   .object({
@@ -228,6 +254,7 @@ export const TOOL_NAMES = [
   "mail_create_forward_draft",
   "mail_send_message",
   "mail_send_reply",
+  "mail_preview_outbound",
   "mailbridge_get_access_preferences",
   "mailbridge_set_access_preferences",
 ] as const;
@@ -247,6 +274,7 @@ export const inputSchemas = {
   mail_create_forward_draft: createForwardDraftInputSchema,
   mail_send_message: sendMessageInputSchema,
   mail_send_reply: sendReplyInputSchema,
+  mail_preview_outbound: previewOutboundInputSchema,
   mailbridge_get_access_preferences: mailbridgeGetAccessPreferencesInputSchema,
   mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema,
 } as const satisfies Record<ToolName, z.ZodType>;

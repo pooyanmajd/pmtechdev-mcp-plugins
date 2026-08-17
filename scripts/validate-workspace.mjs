@@ -11,6 +11,7 @@ const fail = (message) => {
 const rootPackage = readJson("package.json");
 const codexMarketplace = readJson(".agents/plugins/marketplace.json");
 const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
+const grokMarketplace = readJson(".grok-plugin/marketplace.json");
 const pluginRoot = resolve(root, "plugins");
 const pluginDirectories = readdirSync(pluginRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
@@ -21,16 +22,17 @@ if (rootPackage.name !== "pmtechdev-mcp-plugins") fail("unexpected root package 
 if (!rootPackage.workspaces?.includes("plugins/*") || !rootPackage.workspaces?.includes("packages/*")) {
   fail("root workspaces must include plugins/* and packages/*");
 }
-if (codexMarketplace.name !== "pmtechdev" || claudeMarketplace.name !== "pmtechdev") {
+if (codexMarketplace.name !== "pmtechdev" || claudeMarketplace.name !== "pmtechdev" || grokMarketplace.name !== "pmtechdev") {
   fail("marketplace names must be pmtechdev");
 }
-if (!Array.isArray(codexMarketplace.plugins) || !Array.isArray(claudeMarketplace.plugins)) {
+if (!Array.isArray(codexMarketplace.plugins) || !Array.isArray(claudeMarketplace.plugins) || !Array.isArray(grokMarketplace.plugins)) {
   fail("marketplace plugins must be arrays");
 }
 for (const path of [
   "packages/mcp-kit/src/index.ts",
   "templates/mcp-plugin/.claude-plugin/plugin.json",
   "templates/mcp-plugin/.codex-plugin/plugin.json",
+  "templates/mcp-plugin/.grok-plugin/plugin.json",
   "scripts/create-plugin.mjs"
 ]) {
   if (!existsSync(resolve(root, path))) fail(`required reusable workspace asset is missing: ${path}`);
@@ -57,23 +59,38 @@ for (const entry of claudeMarketplace.plugins) {
   if (!entry.category) fail(`missing Claude marketplace category for ${entry.name}`);
 }
 
+const grokMarketplaceNames = new Set();
+for (const entry of grokMarketplace.plugins) {
+  if (grokMarketplaceNames.has(entry.name)) fail(`duplicate Grok marketplace plugin: ${entry.name}`);
+  grokMarketplaceNames.add(entry.name);
+  if (entry.source?.type !== "local" || entry.source?.path !== `./plugins/${entry.name}`) {
+    fail(`invalid Grok marketplace source for ${entry.name}`);
+  }
+  if (!entry.category) fail(`missing Grok marketplace category for ${entry.name}`);
+}
+
 for (const directory of pluginDirectories) {
   const prefix = `plugins/${directory}`;
   const codexManifest = readJson(`${prefix}/.codex-plugin/plugin.json`);
   const claudeManifest = readJson(`${prefix}/.claude-plugin/plugin.json`);
+  const grokManifest = readJson(`${prefix}/.grok-plugin/plugin.json`);
   const packageJson = readJson(`${prefix}/package.json`);
   const mcp = readJson(`${prefix}/.mcp.json`);
-  if (codexManifest.name !== directory || claudeManifest.name !== directory) {
+  if (codexManifest.name !== directory || claudeManifest.name !== directory || grokManifest.name !== directory) {
     fail(`${prefix} folder and manifest names differ`);
   }
   if (packageJson.name !== directory) fail(`${prefix} folder and package names differ`);
-  if (codexManifest.version !== packageJson.version || claudeManifest.version !== packageJson.version) {
+  if (
+    codexManifest.version !== packageJson.version ||
+    claudeManifest.version !== packageJson.version ||
+    grokManifest.version !== packageJson.version
+  ) {
     fail(`${prefix} versions differ`);
   }
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(codexManifest.version)) {
     fail(`${prefix} version is not semver`);
   }
-  if (!codexMarketplaceNames.has(directory) || !claudeMarketplaceNames.has(directory)) {
+  if (!codexMarketplaceNames.has(directory) || !claudeMarketplaceNames.has(directory) || !grokMarketplaceNames.has(directory)) {
     fail(`${prefix} is missing from a marketplace`);
   }
   const registration = Object.values(mcp.mcpServers ?? {})[0];
@@ -96,7 +113,8 @@ for (const directory of pluginDirectories) {
     `${prefix}/README.md`,
     `${prefix}/skills`,
     `${prefix}/.claude-plugin/plugin.json`,
-    `${prefix}/.codex-plugin/plugin.json`
+    `${prefix}/.codex-plugin/plugin.json`,
+    `${prefix}/.grok-plugin/plugin.json`
   ]) {
     if (!existsSync(resolve(root, path))) fail(`required plugin payload is missing: ${path}`);
   }
@@ -107,6 +125,9 @@ for (const name of codexMarketplaceNames) {
 }
 for (const name of claudeMarketplaceNames) {
   if (!pluginDirectories.includes(name)) fail(`Claude marketplace points to missing plugin: ${name}`);
+}
+for (const name of grokMarketplaceNames) {
+  if (!pluginDirectories.includes(name)) fail(`Grok marketplace points to missing plugin: ${name}`);
 }
 
 process.stdout.write(

@@ -4,6 +4,25 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-17
+
+### Security
+
+- Local preferences files can no longer store `send` mode. A hand-edited `mode: "send"` file is ignored and the write path rejects it, so elevating to unconfirmed direct send stays an environment-variable change.
+- `mail_search_messages` without `accountId` now fails closed with `ACCOUNT_SCOPE_REQUIRED` when more than one Mail account is visible and no allowlist is configured.
+
+### Added
+
+- `mail_preview_outbound` returns the same host-agnostic review card used for prompted elicitation, so Codex, Claude Code, and Grok show identical send content before a send.
+- Native Grok Build / Grok CLI packaging: `.grok-plugin/plugin.json`, repository marketplace at `.grok-plugin/marketplace.json`, and [Grok install docs](../../docs/GROK.md). grok.com public-HTTP connectors remain out of scope.
+- Opt-in `scripts/check-mail-compat.mjs` and [COMPATIBILITY.md](docs/COMPATIBILITY.md) for recording live Mail.app dictionary coverage. CI still never automates a mailbox.
+
+### Changed
+
+- Send review dialogs are now Gmail-style compose cards (From / To / Cc / Bcc / Subject / Message). Ordinary addresses and subjects render unquoted; hostile control characters, newlines, and header-impersonating lines still JSON-encode. The confirmation action is labeled **Send**.
+- Attachment downloads default to 256 KiB (hard cap remains 2 MiB).
+- The bundled skill requires first-run account scoping and a preview step before send.
+
 ## [0.4.2] - 2026-07-18
 
 ### Security
@@ -131,7 +150,8 @@ All notable changes to this project will be documented here. The format is based
 
 - Accelerated bounded message search with Mail-native metadata predicates when supported, while retaining indexed fallback behavior and avoiding eager mailbox materialization.
 
-[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/pooyanmajd/pmtechdev-mcp-plugins/compare/v0.3.0...v0.4.0

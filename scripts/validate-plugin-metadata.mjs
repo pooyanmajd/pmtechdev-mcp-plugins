@@ -386,7 +386,7 @@ function walk(directory) {
     }
     if (!entry.isFile()) continue;
     const parent = dirname(path).split(sep).at(-1);
-    if (entry.name === "plugin.json" && parent === ".codex-plugin") validatePluginManifest(path);
+    if (entry.name === "plugin.json" && (parent === ".codex-plugin" || parent === ".grok-plugin")) validatePluginManifest(path);
     else if (entry.name === ".mcp.json") validateMcpManifest(path);
     else if (entry.name === "SKILL.md") validateSkill(path);
     else if (entry.name === "openai.yaml" && parent === "agents") validateAgentMetadata(path);

@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex and Claude Code plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
+Mailbridge MCP is a macOS-only, local STDIO MCP server and Codex, Claude Code, and Grok plugin. It uses Mail.app's public automation dictionary so one MCP connection can work with every account already configured in Mail.app.
 
 The public surface is intentionally bounded to safe inbox workflows and explicit, attachment-free single-message sending—not mailbox administration.
 
@@ -16,6 +16,7 @@ Read tools:
 - `mail_get_message`
 - `mail_get_messages`
 - `mail_get_attachment`
+- `mail_preview_outbound`
 
 Write tools:
 
@@ -67,7 +68,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 
 ## Error model
 
-Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `CONFIRMATION_UNAVAILABLE`, `SEND_NOT_CONFIRMED`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
+Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `ACCOUNT_SCOPE_REQUIRED`, `CONFIRMATION_UNAVAILABLE`, `SEND_NOT_CONFIRMED`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
 
 ## Packaging
 

@@ -1,6 +1,6 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "A local, safety-first MCP server for Apple Mail on macOS",
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp#readme",
   "repository": {
@@ -21,6 +21,7 @@
     "runtime",
     ".claude-plugin",
     ".codex-plugin",
+    ".grok-plugin",
     ".mcp.json",
     "skills",
     "assets",
@@ -48,6 +49,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "validate:package": "node scripts/validate-package.mjs",
+    "check:mail-compat": "node scripts/check-mail-compat.mjs",
     "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run validate:package",
     "pack:dry-run": "npm pack --dry-run"
   },

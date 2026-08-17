@@ -115,7 +115,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_get_attachment",
     title: "Get Mail Attachment",
-    description: "Retrieve one attachment by an opaque attachment ID returned by mail_get_message. Content is bounded to 2 MiB and returned by the local bridge.",
+    description: "Retrieve one attachment by an opaque attachment ID returned by mail_get_message. Default size is 256 KiB; the hard cap is 2 MiB. Request a larger maxBytes only when the user named this file.",
     inputSchema: inputSchemas.mail_get_attachment,
     annotations: READ_ANNOTATIONS,
     allowedModes: ALL_MODES,
@@ -169,6 +169,15 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
     _meta: REQUIRES_USER_INTERACTION_META,
+  },
+  {
+    name: "mail_preview_outbound",
+    title: "Preview Outbound Mail",
+    description:
+      "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject, Message) and wait for explicit approval. This tool does not send mail and is not a confirmation gate.",
+    inputSchema: inputSchemas.mail_preview_outbound,
+    annotations: READ_ANNOTATIONS,
+    allowedModes: ALL_MODES,
   },
   {
     name: "mailbridge_get_access_preferences",

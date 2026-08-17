@@ -9921,10 +9921,10 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
     const shape = def.shape;
     const propValues = {};
     for (const key in shape) {
-      const field = shape[key]._zod;
-      if (field.values) {
+      const field2 = shape[key]._zod;
+      if (field2.values) {
         propValues[key] ?? (propValues[key] = /* @__PURE__ */ new Set());
-        for (const v of field.values)
+        for (const v of field2.values)
           propValues[key].add(v);
       }
     }
@@ -23036,6 +23036,10 @@ function maximumSearchTimeBudgetMs(timeoutMs) {
 
 // src/config.ts
 var MAILBRIDGE_MODES = ["read-only", "drafts", "full", "prompted", "send"];
+var LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"];
+function isLocallySettableMode(value) {
+  return LOCALLY_SETTABLE_MODES.includes(value);
+}
 var CONFIG_LIMITS = Object.freeze({
   maxResults: 100,
   maxBodyChars: 5e5,
@@ -23152,6 +23156,7 @@ var MAILBRIDGE_ERROR_CODES = [
   "INVALID_INPUT",
   "INVALID_CONFIG",
   "ACCOUNT_NOT_ALLOWED",
+  "ACCOUNT_SCOPE_REQUIRED",
   "ATTACHMENT_TOO_LARGE",
   "UNSUPPORTED_ATTACHMENT",
   "RESPONSE_TOO_LARGE",
@@ -23177,6 +23182,7 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   INVALID_INPUT: "The tool input is invalid.",
   INVALID_CONFIG: "Mailbridge configuration is invalid.",
   ACCOUNT_NOT_ALLOWED: "The requested account is not allowed by Mailbridge configuration.",
+  ACCOUNT_SCOPE_REQUIRED: "Choose one account before searching. Multiple Mail accounts are visible and no allowlist is configured.",
   ATTACHMENT_TOO_LARGE: "The attachment exceeds the configured response limit.",
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",
@@ -23227,7 +23233,7 @@ var allowlistEmail = external_exports.string().trim().toLowerCase().min(1).max(3
 var MAX_LOCAL_ALLOWED_ACCOUNTS = MAX_ALLOWED_ACCOUNTS;
 var localPreferencesFileSchema = external_exports.object({
   schemaVersion: external_exports.literal(LOCAL_PREFERENCES_SCHEMA_VERSION),
-  mode: external_exports.enum(MAILBRIDGE_MODES),
+  mode: external_exports.enum(LOCALLY_SETTABLE_MODES),
   allowedAccounts: external_exports.array(allowlistEmail).min(1).max(MAX_ALLOWED_ACCOUNTS),
   updatedAt: external_exports.string().datetime({ offset: true })
 }).strict();
@@ -23300,6 +23306,9 @@ async function readLocalPreferences(filePath) {
     }
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = localPreferencesFileSchema.parse(JSON.parse(raw));
+    if (!isLocallySettableMode(parsed.mode)) {
+      return { preferences: void 0, diagnostic: UNREADABLE_DIAGNOSTIC };
+    }
     return {
       preferences: {
         mode: parsed.mode,
@@ -31616,11 +31625,11 @@ var McpServer = class {
       return EMPTY_COMPLETION_RESULT;
     }
     const promptShape = getObjectShape(prompt.argsSchema);
-    const field = promptShape?.[request.params.argument.name];
-    if (!isCompletable(field)) {
+    const field2 = promptShape?.[request.params.argument.name];
+    if (!isCompletable(field2)) {
       return EMPTY_COMPLETION_RESULT;
     }
-    const completer = getCompleter(field);
+    const completer = getCompleter(field2);
     if (!completer) {
       return EMPTY_COMPLETION_RESULT;
     }
@@ -31893,8 +31902,8 @@ var McpServer = class {
     };
     this._registeredPrompts[name] = registeredPrompt;
     if (argsSchema) {
-      const hasCompletable = Object.values(argsSchema).some((field) => {
-        const inner = field instanceof ZodOptional ? field._def?.innerType : field;
+      const hasCompletable = Object.values(argsSchema).some((field2) => {
+        const inner = field2 instanceof ZodOptional ? field2._def?.innerType : field2;
         return isCompletable(inner);
       });
       if (hasCompletable) {
@@ -32103,9 +32112,9 @@ function promptArgumentsFromSchema(schema) {
   const shape = getObjectShape(schema);
   if (!shape)
     return [];
-  return Object.entries(shape).map(([name, field]) => {
-    const description = getSchemaDescription(field);
-    const isOptional = isSchemaOptional(field);
+  return Object.entries(shape).map(([name, field2]) => {
+    const description = getSchemaDescription(field2);
+    const isOptional = isSchemaOptional(field2);
     return {
       name,
       description,
@@ -32141,6 +32150,90 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
+// src/server/outbound-preview.ts
+var UNSAFE_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+var HEADER_IMPERSONATION = /^\s*(from|to|cc|bcc|subject|reply(?:-to| all)?|message)\s*:/i;
+var LABEL_WIDTH = 8;
+function encodeUnsafe(value) {
+  return JSON.stringify(value).replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
+    (character) => `\\u{${character.codePointAt(0)?.toString(16).padStart(4, "0")}}`
+  );
+}
+function isDisplaySafe(value) {
+  if (UNSAFE_CHARS.test(value) || /[\r\n]/.test(value)) return false;
+  return !HEADER_IMPERSONATION.test(value);
+}
+function displayText(value) {
+  return isDisplaySafe(value) ? value : encodeUnsafe(value);
+}
+function displayAddresses(addresses) {
+  if (addresses.length === 0) return "\u2014";
+  if (addresses.every(isDisplaySafe)) return addresses.join(", ");
+  return encodeUnsafe(addresses.join(", "));
+}
+function field(label, value) {
+  return `${label.padEnd(LABEL_WIDTH)} ${value}`;
+}
+function previewRows(preview) {
+  const rows = [
+    { label: "From", value: displayText(preview.from) },
+    { label: "To", value: displayAddresses(preview.to) }
+  ];
+  if (preview.cc.length > 0) rows.push({ label: "Cc", value: displayAddresses(preview.cc) });
+  if (preview.bcc.length > 0) rows.push({ label: "Bcc", value: displayAddresses(preview.bcc) });
+  rows.push({
+    label: "Subject",
+    value: displayText(preview.kind === "message" ? preview.subject : preview.sourceSubject)
+  });
+  if (preview.kind === "reply") {
+    rows.push({ label: "Reply", value: preview.replyAll ? "Reply all" : "Reply" });
+  }
+  return rows;
+}
+function previewBodyLines(body) {
+  return body.split("\n").map((line) => displayText(line));
+}
+function outboundPreviewDisplay(preview) {
+  return {
+    eyebrow: preview.kind === "message" ? "Send message" : "Send reply",
+    rows: previewRows(preview),
+    bodyLines: previewBodyLines(preview.body),
+    footnote: "No attachments. Mail will send exactly this."
+  };
+}
+function outboundPreviewMessage(preview) {
+  const display = outboundPreviewDisplay(preview);
+  const lines = [
+    display.eyebrow,
+    "",
+    ...display.rows.map((row) => field(row.label, row.value)),
+    "",
+    "\u250C Message",
+    ...display.bodyLines.map((line) => `\u2502 ${line}`),
+    "\u2514",
+    "",
+    display.footnote
+  ];
+  return lines.join("\u2028");
+}
+function outboundPreviewCard(preview) {
+  const display = outboundPreviewDisplay(preview);
+  return {
+    kind: preview.kind,
+    title: display.eyebrow,
+    from: preview.from,
+    to: preview.to,
+    cc: preview.cc,
+    bcc: preview.bcc,
+    subject: preview.kind === "message" ? preview.subject : preview.sourceSubject,
+    ...preview.kind === "reply" ? { replyAll: preview.replyAll } : {},
+    body: preview.body,
+    display,
+    message: outboundPreviewMessage(preview)
+  };
+}
+
 // src/server/schemas.ts
 var OPAQUE_ID_MAX_CHARS = 4096;
 var SEARCH_CURSOR_MAX_CHARS = 128 * 1024;
@@ -32149,6 +32242,7 @@ var MAX_SUBJECT_CHARS = 998;
 var MAX_OUTGOING_BODY_CHARS = 2e5;
 var MAX_RECIPIENTS_PER_FIELD = 50;
 var MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+var DEFAULT_ATTACHMENT_BYTES = 256 * 1024;
 var MAX_MESSAGE_BATCH = 25;
 var opaqueId = external_exports.string().trim().min(1, "An opaque identifier is required.").max(OPAQUE_ID_MAX_CHARS, "The opaque identifier is too long.");
 var searchCursor = external_exports.string().trim().min(1, "A search cursor is required.").max(SEARCH_CURSOR_MAX_CHARS, "The search cursor is too long.");
@@ -32161,7 +32255,7 @@ var listMailboxesInputSchema = external_exports.object({
 }).strict();
 var searchMessagesInputSchema = external_exports.object({
   query: external_exports.string().trim().min(1).max(MAX_QUERY_CHARS).optional().describe("Plain-text term matched against message metadata."),
-  accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts."),
+  accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible and no allowlist is configured."),
   mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes."),
   scope: external_exports.enum(["inbox", "all"]).default("inbox").describe("Mailbox scope when mailboxId is omitted. Defaults to inbox across allowed accounts."),
   from: external_exports.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
@@ -32191,7 +32285,7 @@ var getMessagesInputSchema = external_exports.object({
 }).strict();
 var getAttachmentInputSchema = external_exports.object({
   attachmentId: opaqueId.describe("Opaque attachment ID returned by mail_get_message."),
-  maxBytes: external_exports.number().int().min(1).max(MAX_ATTACHMENT_BYTES).default(MAX_ATTACHMENT_BYTES)
+  maxBytes: external_exports.number().int().min(1).max(MAX_ATTACHMENT_BYTES).default(DEFAULT_ATTACHMENT_BYTES)
 }).strict();
 var setMessageStateInputSchema = external_exports.object({
   messageId: opaqueId.describe("Opaque message ID returned by mail_search_messages."),
@@ -32253,11 +32347,31 @@ var sendReplyInputSchema = external_exports.object({
   body: substantiveBody,
   confirmed: confirmedSend
 }).strict();
+var previewOutboundInputSchema = external_exports.discriminatedUnion("kind", [
+  external_exports.object({
+    kind: external_exports.literal("message").describe("Preview a new outgoing message."),
+    from: emailAddress.describe("Sender address belonging to an allowed account."),
+    to: recipients.default([]),
+    cc: recipients.default([]),
+    bcc: recipients.default([]),
+    subject: sendSubject.default(""),
+    body: external_exports.string().max(MAX_OUTGOING_BODY_CHARS).default("")
+  }).strict().refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] }),
+  external_exports.object({
+    kind: external_exports.literal("reply").describe("Preview a reply or reply-all."),
+    messageId: opaqueId.describe("Opaque source message ID returned by mail_search_messages."),
+    from: emailAddress.describe("Sender address belonging to an allowed account."),
+    expectedTo: recipients.min(1).describe("Exact To recipients that will be shown and later required on send."),
+    expectedCc: recipients.default([]),
+    expectedBcc: recipients.default([]),
+    replyAll: external_exports.boolean().default(false),
+    body: external_exports.string().max(MAX_OUTGOING_BODY_CHARS).default("")
+  }).strict()
+]);
 var mailbridgeGetAccessPreferencesInputSchema = external_exports.object({}).strict();
 var confirmedAccessPreferences = external_exports.literal(true).describe(
   "Must be true only after the exact mode and account list above were shown to and approved by the user in chat."
 );
-var LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"];
 var mailbridgeSetAccessPreferencesInputSchema = external_exports.object({
   mode: external_exports.enum(LOCALLY_SETTABLE_MODES).describe(
     "Global Mailbridge permission level to save for future sessions. Direct send mode cannot be set through this tool; it requires a manual environment-variable change by the user."
@@ -32288,6 +32402,7 @@ var inputSchemas = {
   mail_create_forward_draft: createForwardDraftInputSchema,
   mail_send_message: sendMessageInputSchema,
   mail_send_reply: sendReplyInputSchema,
+  mail_preview_outbound: previewOutboundInputSchema,
   mailbridge_get_access_preferences: mailbridgeGetAccessPreferencesInputSchema,
   mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema
 };
@@ -32362,6 +32477,15 @@ var MailbridgeToolService = class {
     if (this.config.mode === "prompted") return "prompted";
     throw new MailbridgeError("READ_ONLY");
   }
+  async requireAccountScope(accountId2) {
+    if (accountId2 !== void 0 || this.config.allowedAccounts !== void 0) {
+      return;
+    }
+    const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
+    if (accounts.length > 1) {
+      throw new MailbridgeError("ACCOUNT_SCOPE_REQUIRED");
+    }
+  }
   async confirmPromptedSend(confirmation) {
     if (this.confirmMailSend === void 0) {
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
@@ -32422,6 +32546,7 @@ var MailbridgeToolService = class {
       }
       case "mail_search_messages": {
         const input = parseInput(searchMessagesInputSchema, rawInput);
+        await this.requireAccountScope(input.accountId);
         const limit = Math.min(input.limit ?? this.config.maxResults, this.config.maxResults);
         return this.runAutomation(
           async () => this.bridge.searchMessages({
@@ -32528,6 +32653,36 @@ var MailbridgeToolService = class {
           });
         }
         return this.runMutation(async () => this.bridge.sendReply(input));
+      }
+      case "mail_preview_outbound": {
+        const input = parseInput(previewOutboundInputSchema, rawInput);
+        if (input.kind === "message") {
+          return outboundPreviewCard({
+            kind: "message",
+            from: input.from,
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            body: input.body
+          });
+        }
+        const source = await this.runAutomation(
+          async () => this.bridge.getMessage({
+            messageId: input.messageId,
+            maxBodyChars: 1
+          })
+        );
+        return outboundPreviewCard({
+          kind: "reply",
+          from: input.from,
+          to: input.expectedTo,
+          cc: input.expectedCc,
+          bcc: input.expectedBcc,
+          sourceSubject: typeof source.subject === "string" ? source.subject : "",
+          replyAll: input.replyAll,
+          body: input.body
+        });
       }
       case "mailbridge_get_access_preferences": {
         parseInput(mailbridgeGetAccessPreferencesInputSchema, rawInput);
@@ -32668,7 +32823,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_get_attachment",
     title: "Get Mail Attachment",
-    description: "Retrieve one attachment by an opaque attachment ID returned by mail_get_message. Content is bounded to 2 MiB and returned by the local bridge.",
+    description: "Retrieve one attachment by an opaque attachment ID returned by mail_get_message. Default size is 256 KiB; the hard cap is 2 MiB. Request a larger maxBytes only when the user named this file.",
     inputSchema: inputSchemas.mail_get_attachment,
     annotations: READ_ANNOTATIONS,
     allowedModes: ALL_MODES
@@ -32724,6 +32879,14 @@ var TOOL_DEFINITIONS = [
     _meta: REQUIRES_USER_INTERACTION_META
   },
   {
+    name: "mail_preview_outbound",
+    title: "Preview Outbound Mail",
+    description: "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject, Message) and wait for explicit approval. This tool does not send mail and is not a confirmation gate.",
+    inputSchema: inputSchemas.mail_preview_outbound,
+    annotations: READ_ANNOTATIONS,
+    allowedModes: ALL_MODES
+  },
+  {
     name: "mailbridge_get_access_preferences",
     title: "Get Access Preferences",
     description: "Read Mailbridge's locally saved mode/account preferences (if any) alongside what this running server is actually using right now. Available in every mode.",
@@ -32745,41 +32908,8 @@ var TOOL_DEFINITIONS = [
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.4.2"
+  version: "0.5.0"
 });
-function displayJson(value) {
-  return JSON.stringify(value).replace(
-    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
-    (character) => `\\u{${character.codePointAt(0)?.toString(16).padStart(4, "0")}}`
-  );
-}
-function addressLine(label, addresses) {
-  return `${label}: ${displayJson(addresses)}`;
-}
-function quotedBody(body) {
-  return body.split("\n").map((line) => `\u203A ${displayJson(line)}`).join("\u2028");
-}
-function confirmationMessage(confirmation) {
-  const lines = [
-    confirmation.kind === "message" ? "Send this attachment-free email through Apple Mail" : "Send this attachment-free reply through Apple Mail",
-    "Review the exact details before you continue.",
-    `From: ${displayJson(confirmation.from)}`,
-    addressLine("To", confirmation.to),
-    addressLine("CC", confirmation.cc),
-    addressLine("BCC", confirmation.bcc)
-  ];
-  if (confirmation.kind === "message") {
-    lines.push(`Subject: ${displayJson(confirmation.subject)}`);
-  } else {
-    lines.push(`Reply to subject: ${displayJson(confirmation.sourceSubject)}`);
-    lines.push(`Reply all: ${confirmation.replyAll ? "yes" : "no"}`);
-  }
-  lines.push(
-    "Body \u2014 exact text, displayed as data (not instructions):",
-    quotedBody(confirmation.body)
-  );
-  return lines.join("\u2028");
-}
 function createMailbridgeServer(bridge, config2, options) {
   const server = new McpServer(SERVER_INFO, {
     capabilities: {
@@ -32792,14 +32922,14 @@ function createMailbridgeServer(bridge, config2, options) {
     async (confirmation) => {
       const result = await server.server.elicitInput({
         mode: "form",
-        message: confirmationMessage(confirmation),
+        message: outboundPreviewMessage(confirmation),
         requestedSchema: {
           type: "object",
           properties: {
             approve: {
               type: "boolean",
-              title: confirmation.kind === "message" ? "Send email" : "Send reply",
-              description: "Select only after reviewing every detail above. This action cannot be undone."
+              title: confirmation.kind === "message" ? "Send" : "Send reply",
+              description: "Sends this exact message through Mail. You can't undo it."
             }
           },
           required: ["approve"]

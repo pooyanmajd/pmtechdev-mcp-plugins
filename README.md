@@ -5,7 +5,7 @@
 [![Latest release](https://img.shields.io/github/v/release/pooyanmajd/pmtechdev-mcp-plugins?display_name=tag&sort=semver)](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Use every account already configured in Apple Mail from Codex or Claude Code—locally, without giving another service your email password.
+Use every account already configured in Apple Mail from Codex, Claude Code, or Grok—locally, without giving another service your email password.
 
 Mailbridge can search and read mail, manage message state, create drafts, and send attachment-free messages and replies. Direct MCP registrations are read-only by default. The bundled Codex and Claude Code plugins use prompted mode, which requires exact-content client confirmation and fails closed when the client cannot render it.
 
@@ -16,22 +16,32 @@ Mailbridge requires macOS, a working account in Mail.app, and Node.js 22 or 24. 
 ### Codex
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.5.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
 ### Claude Code
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.2
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.5.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
-Start a new Codex task after installation. In Claude Code, run `/reload-plugins`, then use `/mcp` to confirm the bundled `mailbridge` server is connected.
+### Grok (CLI / Build)
+
+Local STDIO only. Do not add Mailbridge as a grok.com custom connector.
+
+```bash
+grok mcp add mailbridge \
+  --env MAILBRIDGE_MODE=prompted \
+  -- node /absolute/path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
+```
+
+Grok Build can also install this repository as a marketplace (`.grok-plugin/marketplace.json`). See [Grok](docs/GROK.md). Start a new Codex, Claude, or Grok session after installation so the bundled skill and MCP tools load.
 
 Try:
 
-> Read my latest three Inbox messages across configured accounts.
+> List my Mail accounts, then read the latest three Inbox messages in one I choose.
 
 > Reply to the latest message from Alex and say thanks.
 
@@ -46,7 +56,7 @@ Try:
 | Exact outbound content confirmed before successful sends in bundled plugins | Yes; unsupported prompts fail closed | Varies |
 | Platform support | macOS | Varies |
 
-Mailbridge uses local STDIO and Apple Events. It does not read Mail's private database, request Full Disk Access, run a hosted relay, or include telemetry. Selected mail and tool results may still be sent to the model provider configured in the host you choose, so only connect it to a trusted Codex, Claude Code, or MCP host. Read the [security model](plugins/mailbridge-mcp/README.md#security-model) before connecting sensitive accounts.
+Mailbridge uses local STDIO and Apple Events. It does not read Mail's private database, request Full Disk Access, run a hosted relay, or include telemetry. Selected mail and tool results may still be sent to the model provider configured in the host you choose, so only connect it to a trusted Codex, Claude Code, Grok CLI, or MCP host. Read the [security model](plugins/mailbridge-mcp/README.md#security-model) before connecting sensitive accounts.
 
 ## PMTechDev MCP & Plugins
 
@@ -58,7 +68,7 @@ Each integration remains independently buildable under `plugins/`, while shared 
 
 | Plugin | Purpose | Platforms | Status |
 | --- | --- | --- | --- |
-| [Mailbridge for Apple Mail](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | [`0.4.2`](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.4.2) |
+| [Mailbridge for Apple Mail](plugins/mailbridge-mcp/README.md) | Search, read, manage state, create drafts, and explicitly send through accounts configured in macOS Mail. | macOS | [`0.5.0`](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.5.0) |
 
 Mailbridge remains read-only for direct registrations by default. The bundled Codex and Claude Code plugins use client-prompted sending for attachment-free new messages and replies; existing `full` configurations do not gain send authority.
 
@@ -68,6 +78,7 @@ Mailbridge remains read-only for direct registrations by default. The bundled Co
 pmtechdev-mcp-plugins/
 ├── .agents/plugins/marketplace.json  # Codex marketplace catalog
 ├── .claude-plugin/marketplace.json   # Claude Code marketplace catalog
+├── .grok-plugin/marketplace.json     # Grok Build marketplace catalog
 ├── packages/
 │   └── mcp-kit/                      # Reusable safety and queue primitives
 ├── plugins/
@@ -92,10 +103,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For the reviewed, immutable release, pin the marketplace to Mailbridge `0.4.2` instead:
+For the reviewed, immutable release, pin the marketplace to Mailbridge `0.5.0` instead:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.5.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -106,13 +117,13 @@ These commands target Codex CLI. Plugins can also be installed for Codex in the 
 Install the immutable release through the native Claude Code marketplace and plugin manifests:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.2
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.5.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
 Run `/reload-plugins`, then use `/mcp` to confirm the bundled `mailbridge` server is connected. The Claude registration resolves `dist/cli.js` through `CLAUDE_PLUGIN_ROOT` and starts in prompted mode, which fails closed unless Claude Code can display and the user accepts the exact-content send form.
 
-The [immutable `0.4.2` release](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.4.2) includes the plugin tarball, SHA-256 checksums, a CycloneDX SBOM, and signed GitHub provenance attestations.
+The [immutable `0.5.0` release](https://github.com/pooyanmajd/pmtechdev-mcp-plugins/releases/tag/v0.5.0) includes the plugin tarball, SHA-256 checksums, a CycloneDX SBOM, and signed GitHub provenance attestations.
 
 Only install Mailbridge in a trusted Codex, Claude Code, or MCP host: the launching host receives macOS Automation authority for Mail. The marketplace configuration uses prompted mode and direct registrations remain read-only by default; selected mail and tool results may still be sent to the model provider configured in that host. Review the [Mailbridge security model](plugins/mailbridge-mcp/README.md#security-model) before connecting sensitive accounts.
 
@@ -138,7 +149,7 @@ npm run check -w example-mcp
 npm run validate:workspace
 ```
 
-The scaffolder normalizes the name, copies the starter, creates valid Codex, Claude Code, and MCP manifests, adds a safe status tool and skill, and appends complete entries to both marketplace catalogs. Replace the generated placeholder scope with the real integration design before publication.
+The scaffolder normalizes the name, copies the starter, creates valid Codex, Claude Code, Grok, and MCP manifests, adds a safe status tool and skill, and appends complete entries to all marketplace catalogs. Replace the generated placeholder scope with the real integration design before publication.
 
 Reusable primitives are exported by `@pmtechdev/mcp-kit`:
 

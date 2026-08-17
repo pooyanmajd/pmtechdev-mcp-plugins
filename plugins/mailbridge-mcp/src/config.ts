@@ -8,6 +8,15 @@ export const MAILBRIDGE_MODES = ["read-only", "drafts", "full", "prompted", "sen
 
 export type MailbridgeMode = (typeof MAILBRIDGE_MODES)[number];
 
+/** Modes a model-mediated preferences write may save. Direct send stays env-only. */
+export const LOCALLY_SETTABLE_MODES = ["read-only", "drafts", "full", "prompted"] as const;
+
+export type LocallySettableMode = (typeof LOCALLY_SETTABLE_MODES)[number];
+
+export function isLocallySettableMode(value: string): value is LocallySettableMode {
+  return (LOCALLY_SETTABLE_MODES as readonly string[]).includes(value);
+}
+
 export interface MailbridgeConfig {
   readonly mode: MailbridgeMode;
   readonly allowedAccounts: readonly string[] | undefined;

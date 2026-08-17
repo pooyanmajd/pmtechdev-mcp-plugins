@@ -2,7 +2,7 @@
 
 ![Mailbridge MCP](assets/logo.svg)
 
-Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex and Claude Code plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and send confirmed attachment-free messages and replies only after the applicable permission gate is satisfied.
+Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server and Codex, Claude Code, and Grok plugin for the accounts already configured in macOS Mail. One connection can search and read multiple accounts, prepare drafts, update read or flagged state, and send confirmed attachment-free messages and replies only after the applicable permission gate is satisfied.
 
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
@@ -15,7 +15,8 @@ Mailbridge is an independent open-source project. It is not affiliated with, end
 - Keep MCP traffic on the local machine over STDIO; no hosted relay, telemetry, or analytics.
 - Search message metadata first, then retrieve a full message only when needed.
 - Select accounts and mailboxes using opaque IDs returned by the bridge.
-- Bound search counts, body sizes, attachment metadata, automation time, and response sizes.
+- Bound search counts, body sizes, attachment metadata (256 KiB default, 2 MiB hard cap), automation time, and response sizes.
+- Preview the exact outbound review card on every host before sending.
 - Create editable drafts, or explicitly send one reviewed attachment-free message or reply.
 - Run deterministic tests against a fake bridge without touching a real mailbox.
 
@@ -58,7 +59,7 @@ Read the workspace [Security](../../SECURITY.md), [Privacy](../../PRIVACY.md), a
 - At least one account configured and working in Mail.app
 - Node.js 22 or 24
 - npm only when building from source
-- An MCP client that supports local STDIO servers; native plugin metadata is included for Codex and Claude Code
+- An MCP client that supports local STDIO servers; native plugin metadata is included for Codex, Claude Code, and Grok CLI / Grok Build
 
 Mailbridge does not run on Linux or Windows. It does not configure Mail accounts for you.
 
@@ -108,10 +109,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.4.2`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.5.0`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.4.2
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.5.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -124,7 +125,7 @@ The bundled marketplace registrations intentionally expose all accounts configur
 The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh exact-content form elicitation. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.4.2
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.5.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
@@ -148,6 +149,18 @@ For local development, add the local repository root as the marketplace source. 
 ```bash
 python3 /path/to/plugin-creator/scripts/validate_plugin.py .
 ```
+
+## Install as a Grok plugin
+
+Grok CLI and Grok Build load local STDIO servers. grok.com custom connectors do not — they require a public HTTP URL, which Mailbridge will not expose. See [Grok](../../docs/GROK.md).
+
+```bash
+grok mcp add mailbridge \
+  --env MAILBRIDGE_MODE=prompted \
+  -- node /absolute/path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
+```
+
+Grok Build can add this repository as a marketplace via `.grok-plugin/marketplace.json` and install `mailbridge-mcp`. The bundled `.mcp.json` starts in `prompted` mode. Call `mail_preview_outbound` before every send so the review card is identical to Codex and Claude. If the Grok surface cannot render MCP form elicitation, sends fail closed; drafts still work.
 
 ## Allow macOS Automation
 
@@ -215,7 +228,8 @@ The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MOD
 | `mail_search_messages` | Return bounded message metadata, exact/contains subject modes, scan count, coverage and stop diagnostics, plus a continuation cursor when an incomplete scan can resume safely. | Read-only |
 | `mail_get_message` | Return one selected message, including bounded body content. | Read-only |
 | `mail_get_messages` | Return a bounded batch of selected messages with per-message body caps. | Read-only |
-| `mail_get_attachment` | Return one selected attachment as bounded base64 content (up to 2 MiB). | Read-only |
+| `mail_get_attachment` | Return one selected attachment as bounded base64 content (256 KiB default, 2 MiB hard cap). | Read-only |
+| `mail_preview_outbound` | Return the exact host-agnostic send review card without sending. | Read-only |
 | `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` / `prompted` / `send` |
 | `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` / `prompted` / `send` |
 | `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
@@ -229,7 +243,7 @@ Sending edited drafts, forwards, attachments, or batches—and permanent deletio
 
 ## Examples with two accounts
 
-Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start by asking Mailbridge to list accounts; then use the returned account ID rather than guessing it.
+Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start by listing accounts. If no allowlist is saved, Mailbridge will refuse an unscoped search (`ACCOUNT_SCOPE_REQUIRED`) until you pass an account ID or save preferences.
 
 **Read unread personal mail**
 
@@ -305,6 +319,7 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `AUTOMATION_BUSY` | Wait for the current Mail automation operation to finish before retrying. |
 | `CONFIRMATION_BUSY` | Too many send confirmations are already pending. Wait for one to resolve before requesting another. |
 | `INVALID_INPUT` / `INVALID_CONFIG` | Correct the bounded tool arguments or environment configuration; do not retry unchanged. |
+| `ACCOUNT_SCOPE_REQUIRED` | More than one account is visible and no allowlist is set. Pass `accountId`, or save an allowlist with `mailbridge_set_access_preferences`. |
 | `ACCOUNT_NOT_ALLOWED` | Select an account in `MAILBRIDGE_ALLOWED_ACCOUNTS`, or deliberately revise the allowlist before restart. |
 | `ATTACHMENT_TOO_LARGE` / `RESPONSE_TOO_LARGE` | Request less data; Mailbridge will not bypass its configured limits. |
 | `UNSUPPORTED_ATTACHMENT` | Open or export the attachment manually in Mail.app if you trust it. |
@@ -315,7 +330,7 @@ Errors are intentionally sanitized; tool results do not expose raw scripts, cred
 ## Roadmap
 
 - Harden the explicit send boundary through deterministic conformance, security, and compatibility testing.
-- Document verified macOS and Mail.app version coverage.
+- Record verified macOS and Mail.app versions in [COMPATIBILITY.md](docs/COMPATIBILITY.md) after local checker runs.
 - Maintain tagged release artifacts with checksums, an SBOM, and signed GitHub provenance attestations.
 - Maintain Mailbridge through the published PMTechDev repository marketplace.
 

@@ -17,6 +17,7 @@ export const MAILBRIDGE_ERROR_CODES = [
   "INVALID_INPUT",
   "INVALID_CONFIG",
   "ACCOUNT_NOT_ALLOWED",
+  "ACCOUNT_SCOPE_REQUIRED",
   "ATTACHMENT_TOO_LARGE",
   "UNSUPPORTED_ATTACHMENT",
   "RESPONSE_TOO_LARGE",
@@ -45,6 +46,8 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   INVALID_INPUT: "The tool input is invalid.",
   INVALID_CONFIG: "Mailbridge configuration is invalid.",
   ACCOUNT_NOT_ALLOWED: "The requested account is not allowed by Mailbridge configuration.",
+  ACCOUNT_SCOPE_REQUIRED:
+    "Choose one account before searching. Multiple Mail accounts are visible and no allowlist is configured.",
   ATTACHMENT_TOO_LARGE: "The attachment exceeds the configured response limit.",
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",

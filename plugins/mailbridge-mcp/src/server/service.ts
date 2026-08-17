@@ -11,6 +11,7 @@ import {
   type LocalPreferencesContext,
 } from "../local-config.js";
 import type { MailBridge } from "../mail/bridge.js";
+import { outboundPreviewCard, type OutboundPreview } from "./outbound-preview.js";
 import {
   createDraftInputSchema,
   createForwardDraftInputSchema,
@@ -22,6 +23,7 @@ import {
   listMailboxesInputSchema,
   mailbridgeGetAccessPreferencesInputSchema,
   mailbridgeSetAccessPreferencesInputSchema,
+  previewOutboundInputSchema,
   searchMessagesInputSchema,
   sendMessageInputSchema,
   sendReplyInputSchema,
@@ -33,26 +35,7 @@ type StructuredJson = Record<string, unknown>;
 const MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 const MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
 
-export type MailSendConfirmation =
-  | {
-      readonly kind: "message";
-      readonly from: string;
-      readonly to: readonly string[];
-      readonly cc: readonly string[];
-      readonly bcc: readonly string[];
-      readonly subject: string;
-      readonly body: string;
-    }
-  | {
-      readonly kind: "reply";
-      readonly from: string;
-      readonly to: readonly string[];
-      readonly cc: readonly string[];
-      readonly bcc: readonly string[];
-      readonly sourceSubject: string;
-      readonly replyAll: boolean;
-      readonly body: string;
-    };
+export type MailSendConfirmation = OutboundPreview;
 
 export type ConfirmMailSend = (confirmation: MailSendConfirmation) => Promise<boolean>;
 
@@ -156,6 +139,16 @@ export class MailbridgeToolService {
     throw new MailbridgeError("READ_ONLY");
   }
 
+  private async requireAccountScope(accountId: string | undefined): Promise<void> {
+    if (accountId !== undefined || this.config.allowedAccounts !== undefined) {
+      return;
+    }
+    const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
+    if (accounts.length > 1) {
+      throw new MailbridgeError("ACCOUNT_SCOPE_REQUIRED");
+    }
+  }
+
   private async confirmPromptedSend(confirmation: MailSendConfirmation): Promise<void> {
     if (this.confirmMailSend === undefined) {
       throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
@@ -225,6 +218,7 @@ export class MailbridgeToolService {
       }
       case "mail_search_messages": {
         const input = parseInput(searchMessagesInputSchema, rawInput);
+        await this.requireAccountScope(input.accountId);
         const limit = Math.min(input.limit ?? this.config.maxResults, this.config.maxResults);
         return this.runAutomation(async () =>
           this.bridge.searchMessages({
@@ -331,6 +325,36 @@ export class MailbridgeToolService {
           });
         }
         return this.runMutation(async () => this.bridge.sendReply(input));
+      }
+      case "mail_preview_outbound": {
+        const input = parseInput(previewOutboundInputSchema, rawInput);
+        if (input.kind === "message") {
+          return outboundPreviewCard({
+            kind: "message",
+            from: input.from,
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            body: input.body,
+          });
+        }
+        const source = await this.runAutomation(async () =>
+          this.bridge.getMessage({
+            messageId: input.messageId,
+            maxBodyChars: 1,
+          }),
+        );
+        return outboundPreviewCard({
+          kind: "reply",
+          from: input.from,
+          to: input.expectedTo,
+          cc: input.expectedCc,
+          bcc: input.expectedBcc,
+          sourceSubject: typeof source.subject === "string" ? source.subject : "",
+          replyAll: input.replyAll,
+          body: input.body,
+        });
       }
       case "mailbridge_get_access_preferences": {
         parseInput(mailbridgeGetAccessPreferencesInputSchema, rawInput);
