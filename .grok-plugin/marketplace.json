@@ -1,0 +1,20 @@
+{
+  "name": "pmtechdev",
+  "description": "Local-first MCP plugins maintained by PMTechDev.",
+  "owner": {
+    "name": "PMTechDev"
+  },
+  "plugins": [
+    {
+      "name": "mailbridge-mcp",
+      "description": "Safely search, read, draft, and explicitly send mail through accounts configured in macOS Mail.",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/mailbridge-mcp"
+      },
+      "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp",
+      "keywords": ["email", "macos", "mcp", "mailbridge"]
+    }
+  ]
+}

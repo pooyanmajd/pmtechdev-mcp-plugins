@@ -10,12 +10,21 @@
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp#readme",
   "repository": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins",
   "license": "MIT",
-  "keywords": ["apple-mail", "email", "macos", "mcp", "productivity"],
+  "keywords": ["apple-mail", "email", "macos", "mcp", "grok", "productivity"],
   "skills": "./skills/",
+  "mcpServers": {
+    "mailbridge": {
+      "command": "node",
+      "args": ["${GROK_PLUGIN_ROOT}/dist/cli.js"],
+      "env": {
+        "MAILBRIDGE_MODE": "prompted"
+      }
+    }
+  },
   "interface": {
     "displayName": "Mailbridge MCP",
-    "shortDescription": "Connect Codex safely to macOS Mail.",
-    "longDescription": "A local-only bridge to accounts already configured in macOS Mail, with bounded reads, explicit partial-search reporting, draft workflows, and per-send confirmation for outbound mail.",
+    "shortDescription": "Connect Grok safely to macOS Mail.",
+    "longDescription": "A local-only STDIO bridge to accounts already configured in macOS Mail, with bounded reads, first-run account scoping, a host-agnostic send preview, and per-send confirmation for outbound mail.",
     "developerName": "PMTechDev",
     "category": "Productivity",
     "capabilities": ["Search", "Read", "Draft", "Send"],
@@ -23,23 +32,13 @@
     "privacyPolicyURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/blob/main/TERMS.md",
     "defaultPrompt": [
-      "Read my latest three Inbox messages across configured accounts.",
-      "Find a message, then summarize it safely.",
-      "Draft an exact reply, show it, and send only after I explicitly approve that content."
+      "List my Mail accounts and save an allowlist before searching.",
+      "Read my latest three Inbox messages in one chosen account.",
+      "Preview an exact reply, show it, and send only after I approve that content."
     ],
     "brandColor": "#276B8C",
     "composerIcon": "./assets/icon.svg",
     "logo": "./assets/logo.svg",
     "logoDark": "./assets/logo-dark.svg"
-  },
-  "mcpServers": {
-    "mailbridge": {
-      "command": "node",
-      "args": ["./dist/cli.js"],
-      "cwd": ".",
-      "env": {
-        "MAILBRIDGE_MODE": "prompted"
-      }
-    }
   }
 }

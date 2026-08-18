@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "__PLUGIN_NAME__": {
-      "command": "node",
-      "args": ["./dist/cli.js"],
-      "cwd": "."
-    }
-  }
-}

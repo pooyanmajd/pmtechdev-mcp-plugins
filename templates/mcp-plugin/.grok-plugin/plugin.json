@@ -1,7 +1,7 @@
 {
   "name": "__PLUGIN_NAME__",
   "version": "0.1.0",
-  "description": "A reusable PMTechDev MCP server and Codex plugin.",
+  "description": "A reusable PMTechDev MCP server and Grok plugin.",
   "author": {
     "name": "PMTechDev",
     "email": "pooyanmjd@gmail.com",
@@ -10,19 +10,18 @@
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/__PLUGIN_NAME__#readme",
   "repository": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins",
   "license": "MIT",
-  "keywords": ["mcp", "codex", "pmtechdev"],
+  "keywords": ["mcp", "grok", "pmtechdev"],
   "skills": "./skills/",
   "mcpServers": {
     "__PLUGIN_NAME__": {
       "command": "node",
-      "args": ["./dist/cli.js"],
-      "cwd": "."
+      "args": ["${GROK_PLUGIN_ROOT}/dist/cli.js"]
     }
   },
   "interface": {
     "displayName": "__PLUGIN_DISPLAY_NAME__",
     "shortDescription": "A PMTechDev MCP integration.",
-    "longDescription": "A local-first MCP server and Codex plugin built on the shared PMTechDev MCP kit.",
+    "longDescription": "A local-first MCP server and Grok plugin built on the shared PMTechDev MCP kit.",
     "developerName": "PMTechDev",
     "category": "Developer Tools",
     "capabilities": ["Read"],

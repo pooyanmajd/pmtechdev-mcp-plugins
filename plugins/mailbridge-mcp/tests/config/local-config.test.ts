@@ -58,7 +58,7 @@ describe("defaultLocalPreferencesContext", () => {
 });
 
 describe("overlayLocalPreferences", () => {
-  const preferences = { mode: "send" as const, allowedAccounts: ["a@example.com", "b@example.com"], updatedAt: "2026-07-17T00:00:00.000Z" };
+  const preferences = { mode: "prompted" as const, allowedAccounts: ["a@example.com", "b@example.com"], updatedAt: "2026-07-17T00:00:00.000Z" };
 
   it("passes the environment through unchanged when there are no saved preferences", () => {
     const env = { MAILBRIDGE_MODE: "read-only" };
@@ -75,7 +75,7 @@ describe("overlayLocalPreferences", () => {
 
   it("fills in fields the environment leaves blank or unset", () => {
     expect(overlayLocalPreferences({ MAILBRIDGE_MODE: "" }, preferences)).toMatchObject({
-      MAILBRIDGE_MODE: "send",
+      MAILBRIDGE_MODE: "prompted",
       MAILBRIDGE_ALLOWED_ACCOUNTS: "a@example.com,b@example.com",
     });
   });
@@ -104,10 +104,10 @@ describe("readLocalPreferences / writeLocalPreferences (real filesystem)", () =>
     const filePath = await tempPreferencesPath();
 
     const written = await writeLocalPreferences(filePath, {
-      mode: "send",
+      mode: "prompted",
       allowedAccounts: ["Person@Example.com", "person@example.com", " other@example.com "],
     });
-    expect(written.mode).toBe("send");
+    expect(written.mode).toBe("prompted");
     expect(written.allowedAccounts).toEqual(["person@example.com", "other@example.com"]);
 
     const dirStat = await fs.stat(path.dirname(filePath));
@@ -151,22 +151,69 @@ describe("readLocalPreferences / writeLocalPreferences (real filesystem)", () =>
     await fs.mkdir(filePath, { recursive: true });
 
     await expect(
-      writeLocalPreferences(filePath, { mode: "send", allowedAccounts: ["person@example.com"] }),
+      writeLocalPreferences(filePath, { mode: "prompted", allowedAccounts: ["person@example.com"] }),
     ).rejects.toThrow();
 
     const leftoverEntries = await fs.readdir(path.dirname(filePath));
     expect(leftoverEntries.filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("never produces a value the real loadConfig rejects when mode is send and env leaves the allowlist unset", async () => {
+  it("requires the direct-send allowlist to originate in the environment", async () => {
     const filePath = await tempPreferencesPath();
-    await writeLocalPreferences(filePath, { mode: "send", allowedAccounts: ["sender@example.com"] });
+    await writeLocalPreferences(filePath, { mode: "prompted", allowedAccounts: ["sender@example.com"] });
     const { preferences } = await readLocalPreferences(filePath);
 
-    const env = overlayLocalPreferences({ MAILBRIDGE_MODE: "send" }, preferences);
+    const missingEnvironmentAllowlist = overlayLocalPreferences({ MAILBRIDGE_MODE: "send" }, preferences);
+    expect(missingEnvironmentAllowlist.MAILBRIDGE_ALLOWED_ACCOUNTS).toBeUndefined();
+    expect(() => loadConfig(missingEnvironmentAllowlist)).toThrow(
+      "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send.",
+    );
 
-    expect(() => loadConfig(env)).not.toThrow();
-    expect(loadConfig(env)).toMatchObject({ mode: "send", allowedAccounts: ["sender@example.com"] });
+    const blankEnvironmentAllowlist = overlayLocalPreferences(
+      { MAILBRIDGE_MODE: "send", MAILBRIDGE_ALLOWED_ACCOUNTS: "   " },
+      preferences,
+    );
+    expect(blankEnvironmentAllowlist.MAILBRIDGE_ALLOWED_ACCOUNTS).toBe("   ");
+    expect(() => loadConfig(blankEnvironmentAllowlist)).toThrow(
+      "MAILBRIDGE_ALLOWED_ACCOUNTS is required when MAILBRIDGE_MODE=send.",
+    );
+
+    const explicitEnvironmentAllowlist = overlayLocalPreferences(
+      {
+        MAILBRIDGE_MODE: "send",
+        MAILBRIDGE_ALLOWED_ACCOUNTS: "explicit@example.com",
+      },
+      preferences,
+    );
+    expect(loadConfig(explicitEnvironmentAllowlist)).toMatchObject({
+      mode: "send",
+      allowedAccounts: ["explicit@example.com"],
+    });
+  });
+
+  it("refuses to write direct send mode and ignores a hand-edited send file", async () => {
+    const filePath = await tempPreferencesPath();
+    await expect(
+      writeLocalPreferences(filePath, {
+        mode: "send" as unknown as "prompted",
+        allowedAccounts: ["sender@example.com"],
+      }),
+    ).rejects.toThrow();
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        mode: "send",
+        allowedAccounts: ["sender@example.com"],
+        updatedAt: new Date(0).toISOString(),
+      }),
+    );
+    const result = await readLocalPreferences(filePath);
+    expect(result.preferences).toBeUndefined();
+    expect(result.diagnostic).toBeDefined();
+    expect(overlayLocalPreferences({}, result.preferences).MAILBRIDGE_MODE).toBeUndefined();
   });
 
   it("refuses to write through a pre-existing symlinked config directory", async () => {
@@ -179,7 +226,7 @@ describe("readLocalPreferences / writeLocalPreferences (real filesystem)", () =>
     const filePath = path.join(linkedDir, "preferences.json");
 
     await expect(
-      writeLocalPreferences(filePath, { mode: "send", allowedAccounts: ["person@example.com"] }),
+      writeLocalPreferences(filePath, { mode: "prompted", allowedAccounts: ["person@example.com"] }),
     ).rejects.toThrow(/symlink/i);
 
     // Confirms the fix actually prevents the chmod-follows-symlink issue: the real

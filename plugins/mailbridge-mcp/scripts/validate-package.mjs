@@ -11,13 +11,17 @@ const fail = (message) => {
 const packageJson = readJson("package.json");
 const codexPlugin = readJson(".codex-plugin/plugin.json");
 const claudePlugin = readJson(".claude-plugin/plugin.json");
-const mcp = readJson(".mcp.json");
+const grokPlugin = readJson(".grok-plugin/plugin.json");
 const serverSource = readFileSync(resolve(root, "src/server/index.ts"), "utf8");
 
-if (packageJson.name !== codexPlugin.name || packageJson.name !== claudePlugin.name) {
+if (packageJson.name !== codexPlugin.name || packageJson.name !== claudePlugin.name || packageJson.name !== grokPlugin.name) {
   fail("package and plugin names differ");
 }
-if (packageJson.version !== codexPlugin.version || packageJson.version !== claudePlugin.version) {
+if (
+  packageJson.version !== codexPlugin.version ||
+  packageJson.version !== claudePlugin.version ||
+  packageJson.version !== grokPlugin.version
+) {
   fail("package and plugin versions differ");
 }
 if (!serverSource.includes(`version: "${packageJson.version}"`)) {
@@ -29,6 +33,7 @@ for (const path of [
   "runtime/mailbridge.jxa.js",
   ".claude-plugin/plugin.json",
   ".codex-plugin/plugin.json",
+  ".grok-plugin/plugin.json",
   "skills/mailbridge/SKILL.md",
   "assets/icon.svg",
   "assets/logo.svg",
@@ -37,23 +42,29 @@ for (const path of [
   if (!existsSync(resolve(root, path))) fail(`required payload is missing: ${path}`);
 }
 
-const registration = mcp.mcpServers?.mailbridge;
-if (registration?.command !== "node" || registration?.args?.[0] !== "./dist/cli.js") {
-  fail(".mcp.json does not launch the committed bundle");
-}
-if (registration?.env?.MAILBRIDGE_MODE !== "prompted") {
-  fail("plugin MCP registration is not configured for per-send prompting");
-}
-
+const codexRegistration = codexPlugin.mcpServers?.mailbridge;
 const claudeRegistration = claudePlugin.mcpServers?.mailbridge;
-if (
-  claudeRegistration?.command !== "node" ||
-  claudeRegistration?.args?.[0] !== "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"
-) {
-  fail("Claude plugin MCP registration does not launch the committed bundle");
+const grokRegistration = grokPlugin.mcpServers?.mailbridge;
+for (const [host, registration, argument, cwd] of [
+  ["Codex", codexRegistration, "./dist/cli.js", "."],
+  ["Claude", claudeRegistration, "${CLAUDE_PLUGIN_ROOT}/dist/cli.js", undefined],
+  ["Grok", grokRegistration, "${GROK_PLUGIN_ROOT}/dist/cli.js", undefined],
+]) {
+  if (
+    registration?.command !== "node" ||
+    !Array.isArray(registration.args) ||
+    registration.args.length !== 1 ||
+    registration.args[0] !== argument ||
+    registration.cwd !== cwd
+  ) {
+    fail(`${host} plugin MCP registration does not launch the committed bundle from the plugin root`);
+  }
+  if (registration.env?.MAILBRIDGE_MODE !== "prompted") {
+    fail(`${host} plugin MCP registration is not configured for per-send prompting`);
+  }
 }
-if (claudeRegistration?.env?.MAILBRIDGE_MODE !== "prompted") {
-  fail("Claude plugin MCP registration is not configured for per-send prompting");
+if (existsSync(resolve(root, ".mcp.json"))) {
+  fail("a convention .mcp.json can override the host-specific MCP registrations");
 }
 
 const runtime = readFileSync(resolve(root, "runtime/mailbridge.jxa.js"), "utf8");

@@ -21,7 +21,7 @@ This repository is a public multi-plugin monorepo and Codex marketplace.
 ## Changes
 
 - Use `npm run create:plugin -- <name>` for a new starter and marketplace entry.
-- Update `.agents/plugins/marketplace.json` through the repository tooling.
+- Update `.agents/plugins/marketplace.json`, `.claude-plugin/marketplace.json`, and `.grok-plugin/marketplace.json` through the repository tooling.
 - Preserve committed standalone bundles under each plugin's `dist/`.
 - Run `npm run check`, plugin/skill validators, package dry-runs, and relevant platform syntax checks before release.
 - Live integration tests are opt-in and must not touch real accounts unless the user explicitly authorizes the exact scope.

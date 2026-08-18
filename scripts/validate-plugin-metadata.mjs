@@ -386,7 +386,7 @@ function walk(directory) {
     }
     if (!entry.isFile()) continue;
     const parent = dirname(path).split(sep).at(-1);
-    if (entry.name === "plugin.json" && parent === ".codex-plugin") validatePluginManifest(path);
+    if (entry.name === "plugin.json" && (parent === ".codex-plugin" || parent === ".grok-plugin")) validatePluginManifest(path);
     else if (entry.name === ".mcp.json") validateMcpManifest(path);
     else if (entry.name === "SKILL.md") validateSkill(path);
     else if (entry.name === "openai.yaml" && parent === "agents") validateAgentMetadata(path);
@@ -394,7 +394,7 @@ function walk(directory) {
 }
 
 walk(root);
-for (const [kind, count] of Object.entries(counts)) {
+for (const [kind, count] of Object.entries(counts).filter(([kind]) => kind !== "mcp")) {
   if (count === 0) errors.push(`No ${kind} metadata files were found`);
 }
 if (errors.length > 0) {

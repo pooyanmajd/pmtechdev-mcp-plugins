@@ -14,6 +14,7 @@ const readOnlyExpectedTools = new Set([
   "mail_list_accounts",
   "mail_search_messages",
   "mail_get_message",
+  "mail_preview_outbound",
   "mailbridge_get_access_preferences",
   "mailbridge_set_access_preferences",
 ]);
@@ -152,6 +153,13 @@ try {
   const installedPluginRoot = resolve(installDirectory, "node_modules/mailbridge-mcp");
   const executable = resolve(installDirectory, "node_modules/.bin/mailbridge-mcp");
   await access(executable, constants.X_OK);
+  await access(resolve(installedPluginRoot, "scripts/check-mail-compat.mjs"), constants.R_OK);
+  try {
+    await access(resolve(installedPluginRoot, ".mcp.json"));
+    throw new Error("Packaged plugin contains a convention .mcp.json that can override host-specific registrations");
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
   const client = requestClient(executable, [], installDirectory);
   let listedToolCount;
   try {
@@ -160,44 +168,67 @@ try {
     await client.close();
   }
 
-  const claudeManifest = JSON.parse(
-    await readFile(resolve(installedPluginRoot, ".claude-plugin/plugin.json"), "utf8"),
-  );
-  const claudeRegistration = claudeManifest.mcpServers?.mailbridge;
-  if (
-    claudeRegistration?.command !== "node" ||
-    !Array.isArray(claudeRegistration.args) ||
-    claudeRegistration.args.length === 0
-  ) {
-    throw new Error("Packaged Claude plugin MCP registration is invalid");
-  }
-  const expandPluginRoot = (value) => value.replaceAll("${CLAUDE_PLUGIN_ROOT}", installedPluginRoot);
-  const claudeClient = requestClient(
-    expandPluginRoot(claudeRegistration.command),
-    claudeRegistration.args.map(expandPluginRoot),
-    installedPluginRoot,
+  const hostRegistrations = [
     {
-      CLAUDE_PLUGIN_ROOT: installedPluginRoot,
-      ...Object.fromEntries(
-        Object.entries(claudeRegistration.env ?? {}).map(([key, value]) => [key, expandPluginRoot(value)]),
-      ),
+      name: "Codex",
+      manifest: ".codex-plugin/plugin.json",
+      argument: "./dist/cli.js",
+      cwd: ".",
+      token: undefined,
     },
-  );
-  try {
-    // The Claude plugin registration runs in prompted mode (MAILBRIDGE_MODE=prompted in
-    // .claude-plugin/plugin.json), which advertises a larger tool surface than the
-    // read-only default the raw binary was checked against above — mode-scoped
-    // registration means these counts are expected to differ, not match.
-    const claudeToolCount = await verifyClient(claudeClient, promptedExpectedTools);
-    if (claudeToolCount < listedToolCount) {
-      throw new Error("Claude plugin MCP registration listed fewer tools than the read-only default");
+    {
+      name: "Claude",
+      manifest: ".claude-plugin/plugin.json",
+      argument: "${CLAUDE_PLUGIN_ROOT}/dist/cli.js",
+      cwd: undefined,
+      token: "${CLAUDE_PLUGIN_ROOT}",
+    },
+    {
+      name: "Grok",
+      manifest: ".grok-plugin/plugin.json",
+      argument: "${GROK_PLUGIN_ROOT}/dist/cli.js",
+      cwd: undefined,
+      token: "${GROK_PLUGIN_ROOT}",
+    },
+  ];
+  for (const host of hostRegistrations) {
+    const manifest = JSON.parse(await readFile(resolve(installedPluginRoot, host.manifest), "utf8"));
+    const registration = manifest.mcpServers?.mailbridge;
+    if (
+      registration?.command !== "node" ||
+      !Array.isArray(registration.args) ||
+      registration.args.length !== 1 ||
+      registration.args[0] !== host.argument ||
+      registration.cwd !== host.cwd ||
+      registration.env?.MAILBRIDGE_MODE !== "prompted"
+    ) {
+      throw new Error(`Packaged ${host.name} plugin MCP registration is invalid`);
     }
-  } finally {
-    await claudeClient.close();
+    const expandPluginRoot = (value) => host.token === undefined
+      ? value
+      : value.replaceAll(host.token, installedPluginRoot);
+    const hostClient = requestClient(
+      expandPluginRoot(registration.command),
+      registration.args.map(expandPluginRoot),
+      resolve(installedPluginRoot, registration.cwd ?? "."),
+      Object.fromEntries(
+        Object.entries(registration.env ?? {}).map(([key, value]) => [key, expandPluginRoot(value)]),
+      ),
+    );
+    try {
+      // Marketplace registrations run in prompted mode, which advertises a larger
+      // tool surface than the read-only default checked through the raw binary.
+      const hostToolCount = await verifyClient(hostClient, promptedExpectedTools);
+      if (hostToolCount < listedToolCount) {
+        throw new Error(`${host.name} plugin MCP registration listed fewer tools than the read-only default`);
+      }
+    } finally {
+      await hostClient.close();
+    }
   }
 
   process.stdout.write(
-    `Packaged Mailbridge initialized through its binary and Claude plugin MCP registration, listing ${listedToolCount} tools without invoking Mail.\n`,
+    `Packaged Mailbridge initialized through its binary and Codex, Claude, and Grok plugin registrations, listing ${listedToolCount} tools without invoking Mail.\n`,
   );
 } finally {
   await rm(temporaryRoot, { force: true, recursive: true });
