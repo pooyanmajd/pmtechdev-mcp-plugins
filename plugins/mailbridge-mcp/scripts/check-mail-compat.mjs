@@ -22,10 +22,57 @@ const requiredTerms = [
   { label: "application.inbox/inmb", tag: "property", attributes: { name: "inbox", code: "inmb", type: "mailbox" }, ancestor: applicationExtension },
 ];
 
-function attributesOf(source) {
+function isXmlWhitespace(character) {
+  return character === " " || character === "\t" || character === "\n" || character === "\r";
+}
+
+function isXmlNameCharacter(character) {
+  if (character === undefined) return false;
+  const code = character.codePointAt(0);
+  return (
+    character === ":" ||
+    character === "_" ||
+    character === "-" ||
+    character === "." ||
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function skipXmlWhitespace(source, initialPosition) {
+  let position = initialPosition;
+  while (position < source.length && isXmlWhitespace(source[position])) position += 1;
+  return position;
+}
+
+function readXmlName(source, initialPosition) {
+  let position = initialPosition;
+  while (position < source.length && isXmlNameCharacter(source[position])) position += 1;
+  return { name: source.slice(initialPosition, position), position };
+}
+
+function attributesOf(source, initialPosition) {
   const attributes = {};
-  const pattern = /([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*(["'])(.*?)\2/g;
-  for (const match of source.matchAll(pattern)) attributes[match[1]] = match[3];
+  let position = initialPosition;
+  while (position < source.length) {
+    position = skipXmlWhitespace(source, position);
+    if (source[position] === "/" || source[position] === ">" || source[position] === undefined) break;
+    const attribute = readXmlName(source, position);
+    if (attribute.name.length === 0) {
+      position += 1;
+      continue;
+    }
+    position = skipXmlWhitespace(source, attribute.position);
+    if (source[position] !== "=") continue;
+    position = skipXmlWhitespace(source, position + 1);
+    const quote = source[position];
+    if (quote !== '"' && quote !== "'") continue;
+    const end = source.indexOf(quote, position + 1);
+    if (end === -1) break;
+    attributes[attribute.name] = source.slice(position + 1, end);
+    position = end + 1;
+  }
   return attributes;
 }
 
@@ -46,21 +93,52 @@ function withoutXmlComments(source) {
   return chunks.join("");
 }
 
+function findTagEnd(source, initialPosition) {
+  let quote;
+  for (let position = initialPosition; position < source.length; position += 1) {
+    const character = source[position];
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return position;
+    }
+  }
+  return -1;
+}
+
 function scanDefinition(source) {
   const withoutComments = withoutXmlComments(source);
   const nodes = [];
   const stack = [];
-  const tagPattern = /<\s*(\/?)\s*([A-Za-z_:][A-Za-z0-9_.:-]*)([^>]*)>/g;
-  for (const match of withoutComments.matchAll(tagPattern)) {
-    const [, closing, tag, attributeSource] = match;
-    if (closing === "/") {
+  let cursor = 0;
+  while (cursor < withoutComments.length) {
+    const start = withoutComments.indexOf("<", cursor);
+    if (start === -1) break;
+    const end = findTagEnd(withoutComments, start + 1);
+    if (end === -1) break;
+    cursor = end + 1;
+
+    let position = skipXmlWhitespace(withoutComments, start + 1);
+    const closing = withoutComments[position] === "/";
+    if (closing) position = skipXmlWhitespace(withoutComments, position + 1);
+    if (withoutComments[position] === "!" || withoutComments[position] === "?") continue;
+    const parsedTag = readXmlName(withoutComments, position);
+    const tag = parsedTag.name;
+    if (tag.length === 0) continue;
+
+    if (closing) {
       const index = stack.findLastIndex((node) => node.tag === tag);
       if (index >= 0) stack.length = index;
       continue;
     }
-    const node = { tag, attributes: attributesOf(attributeSource), ancestors: [...stack] };
+
+    const node = { tag, attributes: attributesOf(withoutComments, parsedTag.position), ancestors: [...stack] };
     nodes.push(node);
-    if (!/\/\s*>$/.test(match[0])) stack.push({ tag: node.tag, attributes: node.attributes });
+    let finalPosition = end - 1;
+    while (finalPosition > start && isXmlWhitespace(withoutComments[finalPosition])) finalPosition -= 1;
+    if (withoutComments[finalPosition] !== "/") stack.push({ tag: node.tag, attributes: node.attributes });
   }
   return nodes;
 }

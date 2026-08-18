@@ -47,6 +47,15 @@ describe("Mail.app static scripting-definition compatibility", () => {
     expect(inspectScriptingDefinition(compatibleDefinition)).toMatchObject({ ok: true, missingTerms: [] });
   });
 
+  it("parses quoted attributes and tag whitespace without regular expressions", () => {
+    const spacedDefinition = compatibleDefinition.replace(
+      '<command name="send" code="emsgsend"/>',
+      "<command\n name = 'send' note = 'comparison > text' code = 'emsgsend' />",
+    );
+
+    expect(inspectScriptingDefinition(spacedDefinition)).toMatchObject({ ok: true, missingTerms: [] });
+  });
+
   it("does not accept a matching term from the wrong suite", () => {
     const wrongSuite = compatibleDefinition.replace(
       '<command name="send" code="emsgsend"/>',
