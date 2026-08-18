@@ -58,6 +58,17 @@ describe("Mail.app static scripting-definition compatibility", () => {
     });
   });
 
+  it("ignores terms inside XML comments, including an unterminated comment tail", () => {
+    const commentedTerms = compatibleDefinition
+      .replace('<command name="send" code="emsgsend"/>', '<!-- <command name="send" code="emsgsend"/> -->')
+      .concat('<!-- <command name="send" code="emsgsend"/>');
+
+    expect(inspectScriptingDefinition(commentedTerms)).toMatchObject({
+      ok: false,
+      missingTerms: ["command.send/emsgsend"],
+    });
+  });
+
   it("skips before reading any definition on non-macOS hosts", () => {
     let read = false;
     const result = checkMailCompatibility({

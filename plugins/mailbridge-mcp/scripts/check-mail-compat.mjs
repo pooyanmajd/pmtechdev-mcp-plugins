@@ -29,8 +29,25 @@ function attributesOf(source) {
   return attributes;
 }
 
+function withoutXmlComments(source) {
+  const chunks = [];
+  let position = 0;
+  while (position < source.length) {
+    const start = source.indexOf("<!--", position);
+    if (start === -1) {
+      chunks.push(source.slice(position));
+      break;
+    }
+    chunks.push(source.slice(position, start));
+    const end = source.indexOf("-->", start + 4);
+    if (end === -1) break;
+    position = end + 3;
+  }
+  return chunks.join("");
+}
+
 function scanDefinition(source) {
-  const withoutComments = source.replace(/<!--[\s\S]*?-->/g, "");
+  const withoutComments = withoutXmlComments(source);
   const nodes = [];
   const stack = [];
   const tagPattern = /<\s*(\/?)\s*([A-Za-z_:][A-Za-z0-9_.:-]*)([^>]*)>/g;
