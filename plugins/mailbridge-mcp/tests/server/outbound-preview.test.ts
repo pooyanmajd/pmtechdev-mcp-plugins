@@ -64,7 +64,7 @@ describe("outbound preview", () => {
   });
 
   it("labels reply-all and encodes a subject that looks like a header", () => {
-    const message = outboundPreviewMessage({
+    const card = outboundPreviewCard({
       kind: "reply",
       from: "me@example.com",
       to: ["person@example.com"],
@@ -74,11 +74,18 @@ describe("outbound preview", () => {
       replyAll: true,
       body: "Thanks",
     });
+    const message = card.message;
 
     expect(message).toContain("Send reply");
     expect(message).toContain("Cc       cc@example.com");
+    expect(message).toContain('Reply to "Subject: injected"');
     expect(message).toContain("Reply    Reply all");
     expect(message).toContain(JSON.stringify("Subject: injected"));
+    expect(message).toContain(
+      "No attachments. Mail generates the reply subject; sender, recipients, and message are exact.",
+    );
+    expect(card).toMatchObject({ replyToSubject: "Subject: injected", replyAll: true });
+    expect(card).not.toHaveProperty("subject");
     expect(displayText("Thanks")).toBe("Thanks");
     expect(displayAddresses([])).toBe("—");
   });

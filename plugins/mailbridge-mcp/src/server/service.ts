@@ -139,14 +139,22 @@ export class MailbridgeToolService {
     throw new MailbridgeError("READ_ONLY");
   }
 
-  private async requireAccountScope(accountId: string | undefined): Promise<void> {
-    if (accountId !== undefined || this.config.allowedAccounts !== undefined) {
-      return;
+  private async resolveSearchAccountScope(
+    accountId: string | undefined,
+    mailboxId: string | undefined,
+  ): Promise<string | undefined> {
+    if (
+      accountId !== undefined ||
+      mailboxId !== undefined ||
+      this.config.allowedAccounts !== undefined
+    ) {
+      return accountId;
     }
     const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
     if (accounts.length > 1) {
       throw new MailbridgeError("ACCOUNT_SCOPE_REQUIRED");
     }
+    return accounts[0]?.id;
   }
 
   private async confirmPromptedSend(confirmation: MailSendConfirmation): Promise<void> {
@@ -218,12 +226,12 @@ export class MailbridgeToolService {
       }
       case "mail_search_messages": {
         const input = parseInput(searchMessagesInputSchema, rawInput);
-        await this.requireAccountScope(input.accountId);
+        const accountId = await this.resolveSearchAccountScope(input.accountId, input.mailboxId);
         const limit = Math.min(input.limit ?? this.config.maxResults, this.config.maxResults);
         return this.runAutomation(async () =>
           this.bridge.searchMessages({
             ...(input.query === undefined ? {} : { query: input.query }),
-            ...(input.accountId === undefined ? {} : { accountId: input.accountId }),
+            ...(accountId === undefined ? {} : { accountId }),
             ...(input.mailboxId === undefined ? {} : { mailboxId: input.mailboxId }),
             scope: input.scope,
             ...(input.from === undefined ? {} : { from: input.from }),

@@ -19,10 +19,10 @@
   "files": [
     "dist",
     "runtime",
+    "scripts/check-mail-compat.mjs",
     ".claude-plugin",
     ".codex-plugin",
     ".grok-plugin",
-    ".mcp.json",
     "skills",
     "assets",
     "docs",

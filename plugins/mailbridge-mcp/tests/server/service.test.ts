@@ -87,6 +87,58 @@ describe("MailbridgeToolService", () => {
     expect(allowlistedResult.isError).not.toBe(true);
   });
 
+  it("pins an unscoped search to the sole account observed before the search starts", async () => {
+    const { bridge, spies } = createFakeBridge();
+    spies.listAccounts.mockResolvedValue([
+      { id: "account:only", emailAddresses: ["one@example.com"] },
+    ]);
+    const service = new MailbridgeToolService(bridge, config());
+
+    const result = await service.invoke("mail_search_messages", { limit: 3 });
+
+    expect(result.isError).not.toBe(true);
+    expect(spies.listAccounts).toHaveBeenCalledOnce();
+    expect(spies.searchMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: "account:only", limit: 3 }),
+    );
+  });
+
+  it("accepts a mailbox-scoped search without an additional account lookup", async () => {
+    const { bridge, spies } = createFakeBridge();
+    spies.listAccounts.mockResolvedValue([
+      { id: "account:1", emailAddresses: ["one@example.com"] },
+      { id: "account:2", emailAddresses: ["two@example.com"] },
+    ]);
+    const service = new MailbridgeToolService(bridge, config());
+
+    const result = await service.invoke("mail_search_messages", {
+      mailboxId: "mailbox:scoped",
+      limit: 3,
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(spies.listAccounts).not.toHaveBeenCalled();
+    expect(spies.searchMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ mailboxId: "mailbox:scoped", limit: 3 }),
+    );
+    expect(spies.searchMessages.mock.calls[0]?.[0]).not.toHaveProperty("accountId");
+  });
+
+  it("uses the 256 KiB attachment default when maxBytes is omitted", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const service = new MailbridgeToolService(bridge, config());
+
+    const result = await service.invoke("mail_get_attachment", {
+      attachmentId: "attachment:default",
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(spies.getAttachment).toHaveBeenCalledWith({
+      attachmentId: "attachment:default",
+      maxBytes: 256 * 1024,
+    });
+  });
+
   it("returns a host-agnostic outbound preview without sending", async () => {
     const { bridge, spies } = createFakeBridge();
     spies.getMessage.mockResolvedValue({ subject: "Re: hello" });
@@ -124,8 +176,9 @@ describe("MailbridgeToolService", () => {
     expect(reply.isError).not.toBe(true);
     expect(parsedResult(reply)).toMatchObject({
       ok: true,
-      data: { kind: "reply", subject: "Re: hello", replyAll: false, body: "Thanks" },
+      data: { kind: "reply", replyToSubject: "Re: hello", replyAll: false, body: "Thanks" },
     });
+    expect((parsedResult(reply).data as Record<string, unknown>)).not.toHaveProperty("subject");
     expect(spies.sendReply).not.toHaveBeenCalled();
   });
 
@@ -245,7 +298,7 @@ describe("MailbridgeToolService", () => {
     expect(enabled.spies.sendReply).toHaveBeenCalledOnce();
   });
 
-  it("requires and records a fresh exact-content confirmation for every prompted send", async () => {
+  it("requires and records the exact review fields for every prompted send", async () => {
     const enabled = createFakeBridge();
     enabled.spies.getMessage.mockResolvedValue({ subject: "Existing conversation" });
     const confirmMailSend = vi.fn().mockResolvedValue(true);

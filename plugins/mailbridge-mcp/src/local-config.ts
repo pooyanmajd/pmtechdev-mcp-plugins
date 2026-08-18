@@ -102,13 +102,22 @@ export function overlayLocalPreferences(
   if (preferences === undefined) {
     return { ...env };
   }
-  return {
+  const overlaid: NodeJS.ProcessEnv = {
     ...env,
     MAILBRIDGE_MODE: isEnvValueSet(env.MAILBRIDGE_MODE) ? env.MAILBRIDGE_MODE : preferences.mode,
-    MAILBRIDGE_ALLOWED_ACCOUNTS: isEnvValueSet(env.MAILBRIDGE_ALLOWED_ACCOUNTS)
-      ? env.MAILBRIDGE_ALLOWED_ACCOUNTS
-      : preferences.allowedAccounts.join(","),
   };
+
+  // Direct send authority is entirely environment-origin. Leaving an absent or
+  // blank env allowlist untouched makes loadConfig() reject send mode instead of
+  // completing it with the model-writable local account list.
+  if (
+    !isEnvValueSet(env.MAILBRIDGE_ALLOWED_ACCOUNTS) &&
+    env.MAILBRIDGE_MODE !== "send"
+  ) {
+    overlaid.MAILBRIDGE_ALLOWED_ACCOUNTS = preferences.allowedAccounts.join(",");
+  }
+
+  return overlaid;
 }
 
 function isEnoent(error: unknown): boolean {

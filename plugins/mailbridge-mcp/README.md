@@ -7,7 +7,7 @@ Mailbridge MCP is a local, safety-first [Model Context Protocol](https://modelco
 Mailbridge is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple Inc., OpenAI, Google, or any email provider. “Apple,” “macOS,” and “Mail” are trademarks of their respective owners.
 
 > [!IMPORTANT]
-> The direct-server default is read-only. The bundled Codex and Claude Code marketplace plugins use `prompted` mode so drafts work immediately and every send requires a fresh client-side confirmation showing the exact outbound content. Allowlisted `send` mode remains available for reviewed direct registrations.
+> The direct-server default is read-only. The bundled Codex, Claude Code, and Grok marketplace plugins use `prompted` mode so drafts work immediately and every send requires a fresh client-side confirmation showing the exact sender, recipients, body, and new-message subject or reply-to subject context. Mail generates actual reply subjects. Allowlisted `send` mode remains available for reviewed direct registrations.
 
 ## Why Mailbridge
 
@@ -16,7 +16,7 @@ Mailbridge is an independent open-source project. It is not affiliated with, end
 - Search message metadata first, then retrieve a full message only when needed.
 - Select accounts and mailboxes using opaque IDs returned by the bridge.
 - Bound search counts, body sizes, attachment metadata (256 KiB default, 2 MiB hard cap), automation time, and response sizes.
-- Preview the exact outbound review card on every host before sending.
+- Preview the outbound review card on every host before sending.
 - Create editable drafts, or explicitly send one reviewed attachment-free message or reply.
 - Run deterministic tests against a fake bridge without touching a real mailbox.
 
@@ -44,7 +44,7 @@ See [Architecture](docs/ARCHITECTURE.md) for data flow and trust boundaries, and
 - **Local transport:** the server exposes STDIO only and has no application telemetry.
 - **Least privilege:** it uses Mail.app's public automation interface and does not read Mail's private database or request Full Disk Access.
 - **Safe direct default:** `MAILBRIDGE_MODE` defaults to `read-only` when no mode is configured.
-- **Prompted marketplace sends:** the bundled Codex and Claude Code plugins run in `prompted` mode. Drafts and reversible state changes are enabled, while each send fails closed unless the MCP client supports form elicitation and the user accepts a prompt containing an unambiguous representation of the exact sender, recipients, subject context, and body.
+- **Prompted marketplace sends:** the bundled Codex, Claude Code, and Grok plugins run in `prompted` mode. Drafts and reversible state changes are enabled, while each send fails closed unless the MCP client supports form elicitation and the user accepts a prompt containing an unambiguous representation of the exact sender, recipients, subject context, and body.
 - **Allowlisted direct sends:** existing `read-only`, `drafts`, and `full` configurations cannot send. `MAILBRIDGE_MODE=send` authorizes direct sending only with a non-empty `MAILBRIDGE_ALLOWED_ACCOUNTS` value.
 - **Atomic, attachment-free sending:** `mail_send_message` and `mail_send_reply` construct and submit one reviewed message in a single operation. Mailbridge does not send arbitrary edited drafts, forwards, attachments, or batches because Mail's public outgoing-message API cannot reliably inventory every draft attachment.
 - **No arbitrary automation:** callers choose only from fixed, validated tools; arbitrary AppleScript/JXA execution is out of scope.
@@ -95,7 +95,7 @@ Review [`skills/mailbridge/SKILL.md`](skills/mailbridge/SKILL.md) before install
 
 ## Install as a Codex plugin
 
-This plugin directory contains a complete payload: the Codex manifest, `.mcp.json`, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. `.mcp.json` launches `node ./dist/cli.js` with the plugin root as its working directory in `prompted` mode.
+This plugin directory contains a complete payload: host-specific Codex, Claude Code, and Grok manifests, the bundled `mailbridge` skill, local assets, the committed production runtime under `dist/`, and the fixed dispatcher at `runtime/mailbridge.jxa.js`. Plugin users do not need to install npm dependencies or build source. The Codex manifest resolves `./dist/cli.js` from the plugin root; the Claude Code and Grok manifests use their respective plugin-root variables. All three launch in `prompted` mode.
 
 Marketplace installation is supported in Codex CLI and for Codex in the ChatGPT desktop app. Plugins are not currently available in the Codex IDE extension. The commands below use Codex CLI; see the official [Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) for other supported installation surfaces.
 
@@ -118,11 +118,11 @@ codex plugin add mailbridge-mcp@pmtechdev
 
 Choose one marketplace source for a fresh installation. If `pmtechdev` is already configured from `main`, run `codex plugin marketplace remove pmtechdev` before re-adding the pinned source. Start a new Codex task after installation so the bundled skill and MCP tools load.
 
-The bundled marketplace registrations intentionally expose all accounts configured in Mail.app because no account addresses are known at install time. Every marketplace send therefore requires an exact-content client confirmation that includes the selected sender. Users who need static account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
+The bundled marketplace registrations intentionally expose all accounts configured in Mail.app because no account addresses are known at install time. Every marketplace send therefore requires a client confirmation that includes the exact sender, recipients, body, and new-message subject or reply-to subject context. Users who need static account isolation should register the server directly with `MAILBRIDGE_ALLOWED_ACCOUNTS` or maintain a reviewed private marketplace configuration. An allowlist reduces accidental account crossover; it does not replace host trust or model-provider data controls.
 
 ## Install as a Claude Code plugin
 
-The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh exact-content form elicitation. Install the immutable release with:
+The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh form elicitation of the reviewed fields. Install the immutable release with:
 
 ```bash
 claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.5.0
@@ -160,7 +160,7 @@ grok mcp add mailbridge \
   -- node /absolute/path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
 ```
 
-Grok Build can add this repository as a marketplace via `.grok-plugin/marketplace.json` and install `mailbridge-mcp`. The bundled `.mcp.json` starts in `prompted` mode. Call `mail_preview_outbound` before every send so the review card is identical to Codex and Claude. If the Grok surface cannot render MCP form elicitation, sends fail closed; drafts still work.
+Grok Build can add this repository as a marketplace via `.grok-plugin/marketplace.json` and install `mailbridge-mcp`. The bundled Grok manifest resolves the committed bundle through `GROK_PLUGIN_ROOT` and starts in `prompted` mode. Call `mail_preview_outbound` before every send so the review card is identical to Codex and Claude. If the Grok surface cannot render MCP form elicitation, sends fail closed; drafts still work.
 
 ## Allow macOS Automation
 
@@ -197,10 +197,10 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `read-only` (direct default) | Yes | No | No | No |
 | `drafts` | Yes | No | Yes | No |
 | `full` | Yes | Yes | Yes | No |
-| `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after exact-content MCP elicitation |
+| `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after MCP elicitation of the reviewed fields |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the exact-content confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. The form JSON-encodes untrusted header values and each body line so mail content cannot forge its trusted labels or delimiters. `send` is intended for reviewed direct registrations and requires an explicit account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the send confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. Ordinary addresses, subjects, and body lines render unquoted; values with control characters, newlines, or header-impersonating prefixes are JSON-encoded so mail content cannot forge trusted labels or delimiters. New-message subjects are exact; reply cards label the selected source subject as `Reply to` because Mail generates the actual reply subject. `send` is intended for reviewed direct registrations and requires an explicit environment account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 
@@ -217,7 +217,9 @@ An explicitly set `MAILBRIDGE_MODE` or `MAILBRIDGE_ALLOWED_ACCOUNTS` environment
 
 `mailbridge_set_access_preferences` cannot set `send` mode. A model-supplied `confirmed: true` is not an independently verified human confirmation, so this tool is restricted to `read-only`/`drafts`/`full`/`prompted`; enabling unconfirmed direct sending stays a manual environment-variable change you make yourself (see [Configuration](#configuration) above).
 
-The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
+When `MAILBRIDGE_MODE=send` is set in the environment, Mailbridge also requires `MAILBRIDGE_ALLOWED_ACCOUNTS` to be set there. A saved local account list is deliberately ignored for direct send mode, so a model-writable preference cannot complete or widen standing send authority.
+
+The bundled Codex, Claude Code, and Grok marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
 
 ## MCP tools
 
@@ -229,7 +231,7 @@ The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MOD
 | `mail_get_message` | Return one selected message, including bounded body content. | Read-only |
 | `mail_get_messages` | Return a bounded batch of selected messages with per-message body caps. | Read-only |
 | `mail_get_attachment` | Return one selected attachment as bounded base64 content (256 KiB default, 2 MiB hard cap). | Read-only |
-| `mail_preview_outbound` | Return the exact host-agnostic send review card without sending. | Read-only |
+| `mail_preview_outbound` | Return the host-agnostic send review card without sending. New-message subjects are exact; reply cards show the source subject as `Reply to` because Mail generates the outgoing reply subject. | Read-only |
 | `mail_set_message_state` | Change only read or flagged state for one selected message. | `full` / `prompted` / `send` |
 | `mail_create_draft` | Create a new editable draft without sending it. | `drafts` / `full` / `prompted` / `send` |
 | `mail_create_reply_draft` | Create an editable reply draft tied to a message. | `drafts` / `full` / `prompted` / `send` |
@@ -243,7 +245,7 @@ Sending edited drafts, forwards, attachments, or batches—and permanent deletio
 
 ## Examples with two accounts
 
-Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start by listing accounts. If no allowlist is saved, Mailbridge will refuse an unscoped search (`ACCOUNT_SCOPE_REQUIRED`) until you pass an account ID or save preferences.
+Suppose Mail.app contains `personal@example.com` and `work@example.com`. Start by listing accounts. If no allowlist is saved, Mailbridge will refuse a search without an account or mailbox scope (`ACCOUNT_SCOPE_REQUIRED`) until you pass an account ID, pass a mailbox ID returned for the selected account, or save preferences.
 
 **Read unread personal mail**
 
@@ -295,7 +297,7 @@ npm run pack:dry-run
 npm run smoke:package
 ```
 
-CI tests Node.js 22 and 24 on macOS but never grants Automation permission or touches a live mailbox. The packaged-plugin smoke installs the real tarball and calls only MCP initialization and `tools/list`. Release verification never sends real mail; send behavior is covered with deterministic fake-backed and fixed-dispatcher contract tests. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
+CI tests Node.js 22 and 24 on macOS but never grants Automation permission or touches a live mailbox. The packaged-plugin smoke installs the real tarball and calls only MCP initialization and `tools/list`. The opt-in `npm run check:mail-compat` check reads Mail.app's static `sdef` XML without launching or automating Mail. Release verification never sends real mail; send behavior is covered with deterministic fake-backed and fixed-dispatcher contract tests. Submission-oriented positive and negative scenarios are documented in [Tool test cases](docs/TOOL_TEST_CASES.md).
 
 ## Troubleshooting
 
@@ -330,7 +332,7 @@ Errors are intentionally sanitized; tool results do not expose raw scripts, cred
 ## Roadmap
 
 - Harden the explicit send boundary through deterministic conformance, security, and compatibility testing.
-- Record verified macOS and Mail.app versions in [COMPATIBILITY.md](docs/COMPATIBILITY.md) after local checker runs.
+- Record verified macOS scripting-definition compatibility in [COMPATIBILITY.md](docs/COMPATIBILITY.md) after local checker runs.
 - Maintain tagged release artifacts with checksums, an SBOM, and signed GitHub provenance attestations.
 - Maintain Mailbridge through the published PMTechDev repository marketplace.
 

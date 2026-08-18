@@ -8,6 +8,26 @@ const fail = (message) => {
   throw new Error(`Workspace validation failed: ${message}`);
 };
 
+const singleRegistration = (manifest, path) => {
+  const entries = Object.entries(manifest.mcpServers ?? {});
+  if (entries.length !== 1) fail(`${path} must declare exactly one inline MCP server`);
+  return entries[0][1];
+};
+
+const validateHostRegistration = (manifest, path, expectedArgument, expectedCwd) => {
+  const registration = singleRegistration(manifest, path);
+  if (
+    registration.command !== "node" ||
+    !Array.isArray(registration.args) ||
+    registration.args.length !== 1 ||
+    registration.args[0] !== expectedArgument ||
+    registration.cwd !== expectedCwd
+  ) {
+    fail(`${path} does not launch its committed bundle from the plugin root`);
+  }
+  return registration;
+};
+
 const rootPackage = readJson("package.json");
 const codexMarketplace = readJson(".agents/plugins/marketplace.json");
 const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
@@ -36,6 +56,28 @@ for (const path of [
   "scripts/create-plugin.mjs"
 ]) {
   if (!existsSync(resolve(root, path))) fail(`required reusable workspace asset is missing: ${path}`);
+}
+
+validateHostRegistration(
+  readJson("templates/mcp-plugin/.codex-plugin/plugin.json"),
+  "templates/mcp-plugin/.codex-plugin/plugin.json",
+  "./dist/cli.js",
+  "."
+);
+validateHostRegistration(
+  readJson("templates/mcp-plugin/.claude-plugin/plugin.json"),
+  "templates/mcp-plugin/.claude-plugin/plugin.json",
+  "${CLAUDE_PLUGIN_ROOT}/dist/cli.js",
+  undefined
+);
+validateHostRegistration(
+  readJson("templates/mcp-plugin/.grok-plugin/plugin.json"),
+  "templates/mcp-plugin/.grok-plugin/plugin.json",
+  "${GROK_PLUGIN_ROOT}/dist/cli.js",
+  undefined
+);
+if (existsSync(resolve(root, "templates/mcp-plugin/.mcp.json"))) {
+  fail("the starter must not contain a convention .mcp.json that can override host-specific registrations");
 }
 
 const codexMarketplaceNames = new Set();
@@ -75,7 +117,6 @@ for (const directory of pluginDirectories) {
   const claudeManifest = readJson(`${prefix}/.claude-plugin/plugin.json`);
   const grokManifest = readJson(`${prefix}/.grok-plugin/plugin.json`);
   const packageJson = readJson(`${prefix}/package.json`);
-  const mcp = readJson(`${prefix}/.mcp.json`);
   if (codexManifest.name !== directory || claudeManifest.name !== directory || grokManifest.name !== directory) {
     fail(`${prefix} folder and manifest names differ`);
   }
@@ -93,20 +134,34 @@ for (const directory of pluginDirectories) {
   if (!codexMarketplaceNames.has(directory) || !claudeMarketplaceNames.has(directory) || !grokMarketplaceNames.has(directory)) {
     fail(`${prefix} is missing from a marketplace`);
   }
-  const registration = Object.values(mcp.mcpServers ?? {})[0];
-  if (!registration || registration.command !== "node" || registration.args?.[0] !== "./dist/cli.js") {
-    fail(`${prefix} does not launch its committed bundle`);
+  const codexRegistration = validateHostRegistration(
+    codexManifest,
+    `${prefix}/.codex-plugin/plugin.json`,
+    "./dist/cli.js",
+    "."
+  );
+  const claudeRegistration = validateHostRegistration(
+    claudeManifest,
+    `${prefix}/.claude-plugin/plugin.json`,
+    "${CLAUDE_PLUGIN_ROOT}/dist/cli.js",
+    undefined
+  );
+  const grokRegistration = validateHostRegistration(
+    grokManifest,
+    `${prefix}/.grok-plugin/plugin.json`,
+    "${GROK_PLUGIN_ROOT}/dist/cli.js",
+    undefined
+  );
+  if (existsSync(resolve(root, `${prefix}/.mcp.json`))) {
+    fail(`${prefix} contains a convention .mcp.json that can override host-specific registrations`);
   }
-  const claudeRegistration = Object.values(claudeManifest.mcpServers ?? {})[0];
   if (
-    !claudeRegistration ||
-    claudeRegistration.command !== "node" ||
-    claudeRegistration.args?.[0] !== "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"
+    directory === "mailbridge-mcp" &&
+    [codexRegistration, claudeRegistration, grokRegistration].some(
+      (registration) => registration.env?.MAILBRIDGE_MODE !== "prompted"
+    )
   ) {
-    fail(`${prefix} does not launch its committed bundle from Claude Code`);
-  }
-  if (directory === "mailbridge-mcp" && claudeRegistration.env?.MAILBRIDGE_MODE !== "prompted") {
-    fail(`${prefix} Claude registration is not configured for per-send prompting`);
+    fail(`${prefix} host registrations are not all configured for per-send prompting`);
   }
   for (const path of [
     `${prefix}/dist/cli.js`,

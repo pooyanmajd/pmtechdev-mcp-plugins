@@ -32,5 +32,14 @@
     "logo": "./assets/logo.svg",
     "logoDark": "./assets/logo-dark.svg"
   },
-  "mcpServers": "./.mcp.json"
+  "mcpServers": {
+    "mailbridge": {
+      "command": "node",
+      "args": ["./dist/cli.js"],
+      "cwd": ".",
+      "env": {
+        "MAILBRIDGE_MODE": "prompted"
+      }
+    }
+  }
 }

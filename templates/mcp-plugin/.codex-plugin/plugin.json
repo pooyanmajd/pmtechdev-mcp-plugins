@@ -12,7 +12,13 @@
   "license": "MIT",
   "keywords": ["mcp", "codex", "pmtechdev"],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "__PLUGIN_NAME__": {
+      "command": "node",
+      "args": ["./dist/cli.js"],
+      "cwd": "."
+    }
+  },
   "interface": {
     "displayName": "__PLUGIN_DISPLAY_NAME__",
     "shortDescription": "A PMTechDev MCP integration.",

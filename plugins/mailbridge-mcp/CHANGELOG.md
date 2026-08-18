@@ -8,8 +8,8 @@ All notable changes to this project will be documented here. The format is based
 
 ### Security
 
-- Local preferences files can no longer store `send` mode. A hand-edited `mode: "send"` file is ignored and the write path rejects it, so elevating to unconfirmed direct send stays an environment-variable change.
-- `mail_search_messages` without `accountId` now fails closed with `ACCOUNT_SCOPE_REQUIRED` when more than one Mail account is visible and no allowlist is configured.
+- Local preferences files can no longer store `send` mode or supply the allowlist when the environment selects direct send. A hand-edited `mode: "send"` file is ignored and the write path rejects it, so both direct-send mode and its account scope stay environment-origin configuration.
+- `mail_search_messages` without `accountId` or `mailboxId` now fails closed with `ACCOUNT_SCOPE_REQUIRED` when more than one Mail account is visible and no allowlist is configured. A mailbox ID already carries its account scope; when a search is truly unscoped and exactly one account is visible, its ID is pinned into the search to prevent a later account-visibility change from widening scope.
 
 ### Added
 
@@ -19,7 +19,7 @@ All notable changes to this project will be documented here. The format is based
 
 ### Changed
 
-- Send review dialogs are now Gmail-style compose cards (From / To / Cc / Bcc / Subject / Message). Ordinary addresses and subjects render unquoted; hostile control characters, newlines, and header-impersonating lines still JSON-encode. The confirmation action is labeled **Send**.
+- Send review dialogs are now Gmail-style compose cards (From / To / Cc / Bcc / Subject or Reply to / Message). Ordinary addresses and subjects render unquoted; hostile control characters, newlines, and header-impersonating lines still JSON-encode. Reply cards distinguish source-subject context from Mail's generated outgoing reply subject. The confirmation action is labeled **Send**.
 - Attachment downloads default to 256 KiB (hard cap remains 2 MiB).
 - The bundled skill requires first-run account scoping and a preview step before send.
 

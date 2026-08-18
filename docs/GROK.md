@@ -8,7 +8,7 @@ Grok CLI loads local stdio servers from `grok mcp add`, `config.toml`, project `
 
 ### Plugin marketplace (Grok Build)
 
-This repository is a Grok marketplace. The catalog is [`.grok-plugin/marketplace.json`](../.grok-plugin/marketplace.json). After adding the marketplace in Grok Build, install `mailbridge-mcp`. The bundled `.mcp.json` starts `node ./dist/cli.js` in `prompted` mode.
+This repository is a Grok marketplace. The catalog is [`.grok-plugin/marketplace.json`](../.grok-plugin/marketplace.json). After adding the marketplace in Grok Build, install `mailbridge-mcp`. Its Grok manifest starts `node ${GROK_PLUGIN_ROOT}/dist/cli.js` in `prompted` mode, so the server path stays anchored to the installed plugin even when Grok starts from another working directory.
 
 ### Direct registration (Grok CLI)
 

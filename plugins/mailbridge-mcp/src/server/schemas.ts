@@ -40,8 +40,8 @@ export const listMailboxesInputSchema = z
 export const searchMessagesInputSchema = z
   .object({
     query: z.string().trim().min(1).max(MAX_QUERY_CHARS).optional().describe("Plain-text term matched against message metadata."),
-    accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible and no allowlist is configured."),
-    mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes."),
+    accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible, no allowlist is configured, and mailboxId is omitted."),
+    mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes. This already scopes the search to its owning account."),
     scope: z.enum(["inbox", "all"]).default("inbox").describe("Mailbox scope when mailboxId is omitted. Defaults to inbox across allowed accounts."),
     from: z.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
     to: z.string().trim().min(1).max(320).optional().describe("Recipient address or text to match."),

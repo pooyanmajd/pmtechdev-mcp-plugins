@@ -40,7 +40,10 @@ export function createMailbridgeServer(
             approve: {
               type: "boolean",
               title: confirmation.kind === "message" ? "Send" : "Send reply",
-              description: "Sends this exact message through Mail. You can't undo it.",
+              description:
+                confirmation.kind === "message"
+                  ? "Sends this exact message through Mail. You can't undo it."
+                  : "Sends this reply through Mail with the sender, recipients, and message shown. Mail generates the reply subject. You can't undo it.",
             },
           },
           required: ["approve"],

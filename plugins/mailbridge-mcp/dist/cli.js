@@ -3644,7 +3644,12 @@ var require_fast_uri = __commonJS({
     }
     function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
+      const { parsed: baseParsed, malformedAuthorityOrPort: baseMalformed } = parseWithStatus(baseURI, schemelessOptions);
+      const { parsed: relativeParsed, malformedAuthorityOrPort: relativeMalformed } = parseWithStatus(relativeURI, schemelessOptions);
+      if (baseMalformed || relativeMalformed) {
+        throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
+      }
+      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
@@ -3769,6 +3774,8 @@ var require_fast_uri = __commonJS({
       return uriTokens.join("");
     }
     var URI_PARSE = /^(?:([^#/:?]+):)?(?:\/\/((?:([^#/?@]*)@)?(\[[^#/?\]]+\]|[^#/:?]*)(?::(\d*))?))?([^#?]*)(?:\?([^#]*))?(?:#((?:.|[\n\r])*))?/u;
+    var AUTHORITY_PREFIX = /^(?:[^#/:?]+:)?\/\/([^/?#]*)/;
+    var AUTHORITY_INTRODUCER_REGION = /^(?:[^#/:?]+:)?([/\\\t\n\r]*)/;
     function getParseError(parsed, matches) {
       if (matches[2] !== void 0 && parsed.path && parsed.path[0] !== "/") {
         return 'URI path must start with "/" when authority is present.';
@@ -3796,6 +3803,25 @@ var require_fast_uri = __commonJS({
           uri = options.scheme + ":" + uri;
         } else {
           uri = "//" + uri;
+        }
+      }
+      const authorityMatch = uri.match(AUTHORITY_PREFIX);
+      if (authorityMatch !== null && authorityMatch[1].indexOf("\\") !== -1) {
+        parsed.error = "URI authority must not contain a literal backslash.";
+        malformedAuthorityOrPort = true;
+      }
+      const introducerMatch = uri.match(AUTHORITY_INTRODUCER_REGION);
+      if (introducerMatch !== null) {
+        const region = introducerMatch[1];
+        const normalizedRegion = region.replace(/[\t\n\r]/g, "");
+        if (normalizedRegion.length >= 2) {
+          if (normalizedRegion.slice(0, 2) !== "//") {
+            parsed.error = parsed.error || "URI authority must not contain a literal backslash.";
+            malformedAuthorityOrPort = true;
+          } else if (region.length !== normalizedRegion.length) {
+            parsed.error = parsed.error || "URI authority introducer must not contain whitespace.";
+            malformedAuthorityOrPort = true;
+          }
         }
       }
       const matches = uri.match(URI_PARSE);
@@ -23258,11 +23284,14 @@ function overlayLocalPreferences(env2, preferences) {
   if (preferences === void 0) {
     return { ...env2 };
   }
-  return {
+  const overlaid = {
     ...env2,
-    MAILBRIDGE_MODE: isEnvValueSet(env2.MAILBRIDGE_MODE) ? env2.MAILBRIDGE_MODE : preferences.mode,
-    MAILBRIDGE_ALLOWED_ACCOUNTS: isEnvValueSet(env2.MAILBRIDGE_ALLOWED_ACCOUNTS) ? env2.MAILBRIDGE_ALLOWED_ACCOUNTS : preferences.allowedAccounts.join(",")
+    MAILBRIDGE_MODE: isEnvValueSet(env2.MAILBRIDGE_MODE) ? env2.MAILBRIDGE_MODE : preferences.mode
   };
+  if (!isEnvValueSet(env2.MAILBRIDGE_ALLOWED_ACCOUNTS) && env2.MAILBRIDGE_MODE !== "send") {
+    overlaid.MAILBRIDGE_ALLOWED_ACCOUNTS = preferences.allowedAccounts.join(",");
+  }
+  return overlaid;
 }
 function isEnoent(error51) {
   return typeof error51 === "object" && error51 !== null && "code" in error51 && error51.code === "ENOENT";
@@ -32182,11 +32211,10 @@ function previewRows(preview) {
   ];
   if (preview.cc.length > 0) rows.push({ label: "Cc", value: displayAddresses(preview.cc) });
   if (preview.bcc.length > 0) rows.push({ label: "Bcc", value: displayAddresses(preview.bcc) });
-  rows.push({
-    label: "Subject",
-    value: displayText(preview.kind === "message" ? preview.subject : preview.sourceSubject)
-  });
-  if (preview.kind === "reply") {
+  if (preview.kind === "message") {
+    rows.push({ label: "Subject", value: displayText(preview.subject) });
+  } else {
+    rows.push({ label: "Reply to", value: displayText(preview.sourceSubject) });
     rows.push({ label: "Reply", value: preview.replyAll ? "Reply all" : "Reply" });
   }
   return rows;
@@ -32199,7 +32227,7 @@ function outboundPreviewDisplay(preview) {
     eyebrow: preview.kind === "message" ? "Send message" : "Send reply",
     rows: previewRows(preview),
     bodyLines: previewBodyLines(preview.body),
-    footnote: "No attachments. Mail will send exactly this."
+    footnote: preview.kind === "message" ? "No attachments. Mail will send exactly this." : "No attachments. Mail generates the reply subject; sender, recipients, and message are exact."
   };
 }
 function outboundPreviewMessage(preview) {
@@ -32226,8 +32254,7 @@ function outboundPreviewCard(preview) {
     to: preview.to,
     cc: preview.cc,
     bcc: preview.bcc,
-    subject: preview.kind === "message" ? preview.subject : preview.sourceSubject,
-    ...preview.kind === "reply" ? { replyAll: preview.replyAll } : {},
+    ...preview.kind === "message" ? { subject: preview.subject } : { replyToSubject: preview.sourceSubject, replyAll: preview.replyAll },
     body: preview.body,
     display,
     message: outboundPreviewMessage(preview)
@@ -32255,8 +32282,8 @@ var listMailboxesInputSchema = external_exports.object({
 }).strict();
 var searchMessagesInputSchema = external_exports.object({
   query: external_exports.string().trim().min(1).max(MAX_QUERY_CHARS).optional().describe("Plain-text term matched against message metadata."),
-  accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible and no allowlist is configured."),
-  mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes."),
+  accountId: opaqueId.optional().describe("Optional opaque account ID returned by mail_list_accounts. Required when more than one account is visible, no allowlist is configured, and mailboxId is omitted."),
+  mailboxId: opaqueId.optional().describe("Optional opaque mailbox ID returned by mail_list_mailboxes. This already scopes the search to its owning account."),
   scope: external_exports.enum(["inbox", "all"]).default("inbox").describe("Mailbox scope when mailboxId is omitted. Defaults to inbox across allowed accounts."),
   from: external_exports.string().trim().min(1).max(320).optional().describe("Sender address or text to match."),
   to: external_exports.string().trim().min(1).max(320).optional().describe("Recipient address or text to match."),
@@ -32477,14 +32504,15 @@ var MailbridgeToolService = class {
     if (this.config.mode === "prompted") return "prompted";
     throw new MailbridgeError("READ_ONLY");
   }
-  async requireAccountScope(accountId2) {
-    if (accountId2 !== void 0 || this.config.allowedAccounts !== void 0) {
-      return;
+  async resolveSearchAccountScope(accountId2, mailboxId2) {
+    if (accountId2 !== void 0 || mailboxId2 !== void 0 || this.config.allowedAccounts !== void 0) {
+      return accountId2;
     }
     const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
     if (accounts.length > 1) {
       throw new MailbridgeError("ACCOUNT_SCOPE_REQUIRED");
     }
+    return accounts[0]?.id;
   }
   async confirmPromptedSend(confirmation) {
     if (this.confirmMailSend === void 0) {
@@ -32546,12 +32574,12 @@ var MailbridgeToolService = class {
       }
       case "mail_search_messages": {
         const input = parseInput(searchMessagesInputSchema, rawInput);
-        await this.requireAccountScope(input.accountId);
+        const accountId2 = await this.resolveSearchAccountScope(input.accountId, input.mailboxId);
         const limit = Math.min(input.limit ?? this.config.maxResults, this.config.maxResults);
         return this.runAutomation(
           async () => this.bridge.searchMessages({
             ...input.query === void 0 ? {} : { query: input.query },
-            ...input.accountId === void 0 ? {} : { accountId: input.accountId },
+            ...accountId2 === void 0 ? {} : { accountId: accountId2 },
             ...input.mailboxId === void 0 ? {} : { mailboxId: input.mailboxId },
             scope: input.scope,
             ...input.from === void 0 ? {} : { from: input.from },
@@ -32863,7 +32891,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_send_message",
     title: "Send Mail Message",
-    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires an explicit account allowlist. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
+    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires mode and account allowlist environment variables. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -32872,7 +32900,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_send_reply",
     title: "Send Mail Reply",
-    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. Prompted mode requires a fresh client confirmation; direct send mode requires an explicit account allowlist. Success means Mail accepted the reply for sending, not that the recipient received it.",
+    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. The review shows the source subject as Reply to because Mail generates the outgoing reply subject. Prompted mode requires a fresh client confirmation; direct send mode requires mode and account allowlist environment variables. Success means Mail accepted the reply for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -32881,7 +32909,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_preview_outbound",
     title: "Preview Outbound Mail",
-    description: "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject, Message) and wait for explicit approval. This tool does not send mail and is not a confirmation gate.",
+    description: "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject for a new message or Reply-to subject context for a reply, and Message) and wait for explicit approval. Mail generates the actual reply subject. This tool does not send mail and is not a confirmation gate.",
     inputSchema: inputSchemas.mail_preview_outbound,
     annotations: READ_ANNOTATIONS,
     allowedModes: ALL_MODES
@@ -32897,7 +32925,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mailbridge_set_access_preferences",
     title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot set direct send mode: that requires a manual environment-variable change by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot configure direct send mode or the effective allowlist used by that mode: both require manual environment-variable changes by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     allowedModes: ALL_MODES,
@@ -32929,7 +32957,7 @@ function createMailbridgeServer(bridge, config2, options) {
             approve: {
               type: "boolean",
               title: confirmation.kind === "message" ? "Send" : "Send reply",
-              description: "Sends this exact message through Mail. You can't undo it."
+              description: confirmation.kind === "message" ? "Sends this exact message through Mail. You can't undo it." : "Sends this reply through Mail with the sender, recipients, and message shown. Mail generates the reply subject. You can't undo it."
             }
           },
           required: ["approve"]

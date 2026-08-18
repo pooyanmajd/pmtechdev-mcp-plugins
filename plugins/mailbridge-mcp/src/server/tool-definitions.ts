@@ -155,7 +155,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_send_message",
     title: "Send Mail Message",
-    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires an explicit account allowlist. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
+    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires mode and account allowlist environment variables. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -164,7 +164,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_send_reply",
     title: "Send Mail Reply",
-    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. Prompted mode requires a fresh client confirmation; direct send mode requires an explicit account allowlist. Success means Mail accepted the reply for sending, not that the recipient received it.",
+    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. The review shows the source subject as Reply to because Mail generates the outgoing reply subject. Prompted mode requires a fresh client confirmation; direct send mode requires mode and account allowlist environment variables. Success means Mail accepted the reply for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -174,7 +174,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     name: "mail_preview_outbound",
     title: "Preview Outbound Mail",
     description:
-      "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject, Message) and wait for explicit approval. This tool does not send mail and is not a confirmation gate.",
+      "Build the Gmail-style send review card for a new message or reply without sending. Call this before mail_send_message or mail_send_reply on every host (Codex, Claude Code, Grok). Show the returned card to the user as a compose review (From, To, Subject for a new message or Reply-to subject context for a reply, and Message) and wait for explicit approval. Mail generates the actual reply subject. This tool does not send mail and is not a confirmation gate.",
     inputSchema: inputSchemas.mail_preview_outbound,
     annotations: READ_ANNOTATIONS,
     allowedModes: ALL_MODES,
@@ -190,7 +190,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mailbridge_set_access_preferences",
     title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot set direct send mode: that requires a manual environment-variable change by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot configure direct send mode or the effective allowlist used by that mode: both require manual environment-variable changes by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     allowedModes: ALL_MODES,

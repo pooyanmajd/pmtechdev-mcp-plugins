@@ -394,7 +394,7 @@ function walk(directory) {
 }
 
 walk(root);
-for (const [kind, count] of Object.entries(counts)) {
+for (const [kind, count] of Object.entries(counts).filter(([kind]) => kind !== "mcp")) {
   if (count === 0) errors.push(`No ${kind} metadata files were found`);
 }
 if (errors.length > 0) {

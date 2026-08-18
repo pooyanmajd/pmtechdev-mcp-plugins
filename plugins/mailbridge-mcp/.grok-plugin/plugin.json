@@ -12,7 +12,15 @@
   "license": "MIT",
   "keywords": ["apple-mail", "email", "macos", "mcp", "grok", "productivity"],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "mailbridge": {
+      "command": "node",
+      "args": ["${GROK_PLUGIN_ROOT}/dist/cli.js"],
+      "env": {
+        "MAILBRIDGE_MODE": "prompted"
+      }
+    }
+  },
   "interface": {
     "displayName": "Mailbridge MCP",
     "shortDescription": "Connect Grok safely to macOS Mail.",

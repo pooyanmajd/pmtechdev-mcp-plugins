@@ -38,7 +38,8 @@ export interface OutboundPreviewCard {
   readonly to: readonly string[];
   readonly cc: readonly string[];
   readonly bcc: readonly string[];
-  readonly subject: string;
+  readonly subject?: string;
+  readonly replyToSubject?: string;
   readonly replyAll?: boolean;
   readonly body: string;
   readonly display: OutboundPreviewDisplay;
@@ -83,11 +84,10 @@ function previewRows(preview: OutboundPreview): OutboundPreviewRow[] {
   ];
   if (preview.cc.length > 0) rows.push({ label: "Cc", value: displayAddresses(preview.cc) });
   if (preview.bcc.length > 0) rows.push({ label: "Bcc", value: displayAddresses(preview.bcc) });
-  rows.push({
-    label: "Subject",
-    value: displayText(preview.kind === "message" ? preview.subject : preview.sourceSubject),
-  });
-  if (preview.kind === "reply") {
+  if (preview.kind === "message") {
+    rows.push({ label: "Subject", value: displayText(preview.subject) });
+  } else {
+    rows.push({ label: "Reply to", value: displayText(preview.sourceSubject) });
     rows.push({ label: "Reply", value: preview.replyAll ? "Reply all" : "Reply" });
   }
   return rows;
@@ -102,7 +102,10 @@ export function outboundPreviewDisplay(preview: OutboundPreview): OutboundPrevie
     eyebrow: preview.kind === "message" ? "Send message" : "Send reply",
     rows: previewRows(preview),
     bodyLines: previewBodyLines(preview.body),
-    footnote: "No attachments. Mail will send exactly this.",
+    footnote:
+      preview.kind === "message"
+        ? "No attachments. Mail will send exactly this."
+        : "No attachments. Mail generates the reply subject; sender, recipients, and message are exact.",
   };
 }
 
@@ -134,8 +137,9 @@ export function outboundPreviewCard(preview: OutboundPreview): OutboundPreviewCa
     to: preview.to,
     cc: preview.cc,
     bcc: preview.bcc,
-    subject: preview.kind === "message" ? preview.subject : preview.sourceSubject,
-    ...(preview.kind === "reply" ? { replyAll: preview.replyAll } : {}),
+    ...(preview.kind === "message"
+      ? { subject: preview.subject }
+      : { replyToSubject: preview.sourceSubject, replyAll: preview.replyAll }),
     body: preview.body,
     display,
     message: outboundPreviewMessage(preview),
