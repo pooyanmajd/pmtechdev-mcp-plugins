@@ -341,7 +341,7 @@ describe("MCP server", () => {
         shadowedByEnvironment: { mode: true, allowedAccounts: false },
       },
     });
-    await expect(fs.access(localPreferencesContext.path)).rejects.toThrow();
+    await expect(fs.readFile(localPreferencesContext.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
     const resource = await client.readResource({ uri: "ui://mailbridge/access-preferences-v1.html" });
     expect(resource.contents).toHaveLength(1);

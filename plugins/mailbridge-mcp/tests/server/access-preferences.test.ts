@@ -97,7 +97,7 @@ describe("MailbridgeToolService — access preferences", () => {
       .map((item) => item.text)
       .join("\n");
     expect(visibleText).not.toContain(id);
-    await expect(fs.access(context.path)).rejects.toThrow();
+    await expect(fs.readFile(context.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
     const committed = await service.invoke("mailbridge_commit_access_preferences", { proposalId: id });
 

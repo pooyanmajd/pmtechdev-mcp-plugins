@@ -50,7 +50,7 @@ function harness(openai?: Record<string, unknown>) {
     createElement: () => new Element(),
     createElementNS: () => new Element(),
   };
-  const script = ACCESS_PREFERENCES_UI_HTML.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  const script = ACCESS_PREFERENCES_UI_HTML.match(/<script>([\s\S]*?)<\/script>/i)?.[1];
   if (!script) throw new Error("Missing card script");
   runInNewContext(script, { window, document, setTimeout, clearTimeout });
   return {
