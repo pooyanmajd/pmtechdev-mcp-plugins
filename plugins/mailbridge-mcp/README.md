@@ -109,10 +109,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.6.0`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.6.1`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.6.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.6.1
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -125,7 +125,7 @@ The bundled marketplace registrations intentionally expose all accounts configur
 The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh form elicitation of the reviewed fields. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.6.0
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.6.1
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
@@ -200,7 +200,7 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after MCP elicitation of the reviewed fields |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-A complete prompted-send instruction opens one native final review; do not require an extra chat approval or checkbox. Native **Continue** approves and **Skip** cancels. `full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the send confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. Ordinary addresses, subjects, and body lines render unquoted; values with control characters, newlines, or header-impersonating prefixes are JSON-encoded so mail content cannot forge trusted labels or delimiters. New-message subjects are exact; reply cards label the selected source subject as `Reply to` because Mail generates the actual reply subject. `send` is intended for reviewed direct registrations and requires an explicit environment account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+A complete prompted-send instruction opens one native final review; do not require an extra chat approval or checkbox. Native **Continue** approves and **Skip** cancels. The review expires after five minutes; late approval never sends, and expiry returns `CONFIRMATION_TIMEOUT`. `full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the send confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. Ordinary addresses, subjects, and body lines render unquoted; values with control characters, newlines, or header-impersonating prefixes are JSON-encoded so mail content cannot forge trusted labels or delimiters. New-message subjects are exact; reply cards label the selected source subject as `Reply to` because Mail generates the actual reply subject. `send` is intended for reviewed direct registrations and requires an explicit environment account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 
@@ -215,7 +215,7 @@ Do not put passwords or provider tokens in either value. This paragraph applies 
 
 Mailbridge reads a per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under an absolute `XDG_CONFIG_HOME`). The file has `0600` permissions and never ships in the plugin. Explicit environment values always win. Direct `send` mode and its allowlist must both come from the environment; local preferences cannot grant that authority.
 
-Use `mailbridge_get_access_preferences` to compare saved values with the running configuration. After selecting an exact mode and complete account list, call `mailbridge_set_access_preferences` once without a duplicate chat-approval step. On MCP Apps hosts it prepares a responsive inline review card and writes nothing. The card shows account scope, capabilities, application timing, and relevant verification or launch-setting warnings. **Save access** calls the app-only `mailbridge_commit_access_preferences` with a private, ten-minute proposal identifier. On hosts without MCP Apps, a native form presents the same scope and saves only after acceptance. Clients supporting neither interface receive `CONFIRMATION_UNAVAILABLE` without saving.
+Use `mailbridge_get_access_preferences` to compare saved values with the running configuration and inspect `serverVersion` to verify an update is loaded. After selecting an exact mode and complete account list, call `mailbridge_set_access_preferences` once without a duplicate chat-approval step. On MCP Apps hosts it prepares a responsive inline review card and writes nothing. The card shows account scope, capabilities, application timing, and relevant verification or launch-setting warnings. **Save access** calls the app-only `mailbridge_commit_access_preferences` with a private, ten-minute proposal identifier. On hosts without MCP Apps, a native form presents the same scope and saves only after acceptance. Clients supporting neither interface receive `CONFIRMATION_UNAVAILABLE` without saving.
 
 Preferences can save only `read-only`, `drafts`, `full`, or `prompted`. Both interfaces replace the entire account list, and saved changes apply after restart or reconnect. Bundled host manifests set `MAILBRIDGE_MODE=prompted`, so their launch mode overrides a saved mode until the user removes that override from a registration they control.
 
@@ -310,7 +310,8 @@ CI tests Node.js 22 and 24 on macOS but never grants Automation permission or to
 | `NOT_FOUND` | Refresh the account/mailbox/message listing; opaque IDs may refer to content no longer available. |
 | `AMBIGUOUS_ID` | Narrow by account and mailbox, then select from the returned metadata. |
 | `READ_ONLY` | Use read tools, or explicitly restart in `drafts`, `full`, `prompted`, or `send` mode after reviewing the exact authority needed. |
-| `CONFIRMATION_UNAVAILABLE` | The client could not present the required exact-content send form. Create an editable draft or use a reviewed allowlisted direct registration; never bypass the send gate. |
+| `CONFIRMATION_TIMEOUT` | The five-minute review expired before approval reached Mailbridge. Nothing was sent or saved; open a fresh review only on an explicit retry request. |
+| `CONFIRMATION_UNAVAILABLE` | The client could not complete the required exact-content send form; this does not mean no dialog appeared. Create an editable draft or use a reviewed allowlisted direct registration; never bypass the send gate. |
 | `SEND_NOT_CONFIRMED` | No explicit approval was received — this can mean a human declined, or that the connected client/session could not present the confirmation prompt at all (some clients, including the Claude Code desktop app, auto-decline the form without displaying it). If no prompt was visible, create a draft instead rather than retrying the same send, or use a reviewed allowlisted direct `send` registration for a surface that never renders the prompt. |
 | `PREFERENCES_NOT_CONFIRMED` | No exact-scope approval was received and nothing was saved. Re-open the dialog only if the user asks to review the proposed replacement again. |
 | `PREFERENCES_PROPOSAL_EXPIRED` | The card's short-lived proposal expired or was evicted. Open a fresh access card and review it again. |

@@ -53,6 +53,7 @@ describe("MailbridgeToolService — access preferences", () => {
     expect(result.structuredContent).toMatchObject({
       ok: true,
       data: {
+        serverVersion: "0.6.1",
         found: false,
         path: context.path,
         activeMode: "read-only",

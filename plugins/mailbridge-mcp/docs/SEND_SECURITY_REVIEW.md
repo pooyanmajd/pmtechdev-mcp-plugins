@@ -11,6 +11,8 @@ Both operations are attachment-free and atomic at the Mailbridge dispatcher boun
 
 The marketplace configuration uses `MAILBRIDGE_MODE=prompted`. In that mode, every send request pauses for MCP form elicitation that shows the exact sender, recipients, message body, and either the new-message subject or the source subject used as reply context. Mail generates the actual reply subject. The user must accept before Mailbridge enters the send path. The established `send` mode remains available for reviewed direct registrations that use a static environment-origin account allowlist.
 
+Native reviews use an explicit five-minute human-review deadline, separate from Mail automation timeouts. The dialog displays this limit. Expiry returns `CONFIRMATION_TIMEOUT`, never invokes a mutation, and cannot be revived by a late acceptance. There is no automatic retry. Regression tests cover acceptance after 107 seconds and late acceptance after the five-minute deadline for both send tools and native preference saves.
+
 ## Why the boundary is narrow
 
 Mail.app's public scripting dictionary exposes a `send` command for an outgoing message, but its outgoing-message class does not expose a complete, stable attachment inventory. Mailbridge therefore cannot prove that an arbitrary draft still matches a prior approval after a user, plugin, or Mail.app edit. Sending such a draft would turn an opaque draft ID into authority over unreviewed content.

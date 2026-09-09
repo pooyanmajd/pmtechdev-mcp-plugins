@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { BoundedSerialQueue } from "@pmtechdev/mcp-kit";
 
@@ -14,6 +15,7 @@ import {
 } from "../local-config.js";
 import type { MailBridge } from "../mail/bridge.js";
 import { outboundPreviewCard, type OutboundPreview } from "./outbound-preview.js";
+import { SERVER_INFO } from "./version.js";
 import {
   createDraftInputSchema,
   createForwardDraftInputSchema,
@@ -69,6 +71,7 @@ interface PendingAccessPreferencesProposal {
 }
 
 interface GetAccessPreferencesResult {
+  readonly serverVersion: string;
   readonly found: boolean;
   readonly path: string;
   readonly savedMode?: MailbridgeConfig["mode"];
@@ -125,6 +128,13 @@ function parseInput<T extends z.ZodType>(schema: T, input: unknown): z.output<T>
   return parsed.data;
 }
 
+function confirmationFailure(error: unknown): MailbridgeError {
+  if (error instanceof MailbridgeError && error.code === "CONFIRMATION_BUSY") return error;
+  return new MailbridgeError(error instanceof McpError && error.code === Number(ErrorCode.RequestTimeout)
+    ? "CONFIRMATION_TIMEOUT"
+    : "CONFIRMATION_UNAVAILABLE");
+}
+
 export class MailbridgeToolService {
   private readonly automationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS);
   // Separate from automationQueue: bounds concurrent pending client confirmations
@@ -171,8 +181,7 @@ export class MailbridgeToolService {
           () => new MailbridgeError("CONFIRMATION_BUSY"),
         );
       } catch (error: unknown) {
-        if (error instanceof MailbridgeError && error.code === "CONFIRMATION_BUSY") throw error;
-        throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+        throw confirmationFailure(error);
       }
       if (!approved) throw new MailbridgeError("PREFERENCES_NOT_CONFIRMED");
       return success(await this.commitAccessPreferences({ proposalId }));
@@ -233,10 +242,7 @@ export class MailbridgeToolService {
         () => new MailbridgeError("CONFIRMATION_BUSY"),
       );
     } catch (error: unknown) {
-      if (error instanceof MailbridgeError && error.code === "CONFIRMATION_BUSY") {
-        throw error;
-      }
-      throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      throw confirmationFailure(error);
     }
     if (!approved) {
       throw new MailbridgeError("SEND_NOT_CONFIRMED");
@@ -532,6 +538,7 @@ export class MailbridgeToolService {
         parseInput(mailbridgeGetAccessPreferencesInputSchema, rawInput);
         const { preferences, diagnostic } = await readLocalPreferences(this.localPreferences.path);
         const result: GetAccessPreferencesResult = {
+          serverVersion: SERVER_INFO.version,
           found: preferences !== undefined,
           path: this.localPreferences.path,
           ...(preferences === undefined

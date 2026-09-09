@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MailbridgeConfig } from "../../src/config.js";
 import type { LocalPreferencesContext } from "../../src/local-config.js";
@@ -32,6 +32,7 @@ describe("MCP server", () => {
 
   afterEach(async () => {
     await Promise.all(closeCallbacks.splice(0).map(async (close) => close()));
+    vi.useRealTimers();
     await Promise.all(tempDirs.splice(0).map(async (dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
@@ -224,6 +225,49 @@ describe("MCP server", () => {
     expect(spies.sendMessage).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { kind: "message", reviewMs: 107_000, expired: false },
+    { kind: "reply", reviewMs: 107_000, expired: false },
+    { kind: "message", reviewMs: 300_001, expired: true },
+    { kind: "reply", reviewMs: 300_001, expired: true },
+  ])("handles delayed $kind approval at $reviewMs ms (expired: $expired)", async ({ kind, reviewMs, expired }) => {
+    const { bridge, spies } = createFakeBridge();
+    spies.getMessage.mockResolvedValue({ subject: "Source subject" });
+    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    const client = new Client({ name: "slow-review", version: "1.0.0" }, {
+      capabilities: { elicitation: { form: {} } },
+    });
+    let approve: (() => void) | undefined;
+    client.setRequestHandler(ElicitRequestSchema, () => new Promise((resolve) => {
+      approve = () => resolve({ action: "accept", content: {} });
+    }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+    vi.useFakeTimers();
+    const resultPromise = client.callTool({
+      name: kind === "message" ? "mail_send_message" : "mail_send_reply",
+      arguments: kind === "message"
+        ? { accountId: "account:1", from: "sender@example.com", to: ["recipient@example.com"], body: "Exact body", confirmed: true }
+        : { messageId: "message:1", from: "sender@example.com", expectedTo: ["recipient@example.com"], body: "Exact body", confirmed: true },
+    }, undefined, { timeout: 360_000 });
+    await vi.advanceTimersByTimeAsync(reviewMs);
+    expect(approve).toBeTypeOf("function");
+    expect(spies.sendMessage).not.toHaveBeenCalled();
+    expect(spies.sendReply).not.toHaveBeenCalled();
+    approve?.();
+    const result = await resultPromise;
+    await vi.advanceTimersByTimeAsync(0);
+    if (expired) {
+      expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "CONFIRMATION_TIMEOUT" } });
+      expect(spies.sendMessage).not.toHaveBeenCalled();
+      expect(spies.sendReply).not.toHaveBeenCalled();
+    } else {
+      expect(result.isError).not.toBe(true);
+      expect(kind === "message" ? spies.sendMessage : spies.sendReply).toHaveBeenCalledOnce();
+    }
+  });
+
   it("treats native Skip as cancellation and never calls Mail", async () => {
     const { bridge, spies } = createFakeBridge();
     const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
@@ -412,6 +456,50 @@ describe("MCP server", () => {
     } else {
       expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "PREFERENCES_NOT_CONFIRMED" } });
       await expect(fs.access(preferencesPath)).rejects.toThrow();
+    }
+  });
+
+  it.each([
+    { reviewMs: 107_000, expired: false },
+    { reviewMs: 300_001, expired: true },
+  ])("handles delayed native preference approval at $reviewMs ms (expired: $expired)", async ({ reviewMs, expired }) => {
+    const { bridge } = createFakeBridge();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-slow-prefs-"));
+    tempDirs.push(dir);
+    const preferencesPath = path.join(dir, "preferences.json");
+    const server = createMailbridgeServer(bridge, config, { localPreferencesContext: {
+      path: preferencesPath, envOverrides: { mode: false, allowedAccounts: false },
+    } });
+    const client = new Client({ name: "slow-native-review", version: "1.0.0" }, {
+      capabilities: { elicitation: { form: {} } },
+    });
+    let approve: (() => void) | undefined;
+    let markReady: (() => void) | undefined;
+    const ready = new Promise<void>((resolve) => { markReady = resolve; });
+    client.setRequestHandler(ElicitRequestSchema, (request) => new Promise((resolve) => {
+      expect(request.params.message).toContain("This review expires after 5 minutes.");
+      approve = () => resolve({ action: "accept", content: {} });
+      markReady?.();
+    }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+    vi.useFakeTimers();
+    const resultPromise = client.callTool({ name: "mailbridge_set_access_preferences", arguments: {
+      mode: "drafts", allowedAccounts: ["person@example.com"],
+    } }, undefined, { timeout: 360_000 });
+    await ready;
+    await vi.advanceTimersByTimeAsync(reviewMs);
+    await expect(fs.readFile(preferencesPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    approve?.();
+    const result = await resultPromise;
+    await vi.advanceTimersByTimeAsync(0);
+    if (expired) {
+      expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "CONFIRMATION_TIMEOUT" } });
+      await expect(fs.readFile(preferencesPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect(result.structuredContent).toMatchObject({ ok: true, data: { saved: true } });
+      await expect(fs.readFile(preferencesPath, "utf8")).resolves.toContain('"mode": "drafts"');
     }
   });
 
