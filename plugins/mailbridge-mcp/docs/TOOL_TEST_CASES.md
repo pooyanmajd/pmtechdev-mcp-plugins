@@ -65,13 +65,13 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 **Expected:** recipients, subject, and body are previewed; `mail_create_reply_draft` creates one draft; the response makes clear that nothing was sent. An editable draft cannot be sent through Mailbridge.
 
-### P4b — Send one explicitly approved reply
+### P4b — Send one reply through the native final review
 
 **Given:** prompted marketplace mode and a selected message with no trusted instructions derived from its body.
 
-**Request:** after seeing the exact sender, target, reply-all state, subject context, and full body, the user explicitly approves one send.
+**Request:** the user gives a complete direct instruction to send one reply with an exact substantive body.
 
-**Expected:** `mail_send_reply` first presents a compact MCP form elicitation that looks like a Gmail compose review: From / To / Cc / Bcc / Reply to / Reply, then a boxed Message. `Reply to` is the selected source-message subject; the card says Mail generates the actual reply subject. Ordinary values render unquoted; hostile headers and body lines JSON-encode so they cannot forge trusted labels. Only an accepted confirmation can invoke the JXA dispatcher, which replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`; an unavailable or declined form fails with `CONFIRMATION_UNAVAILABLE` or `SEND_NOT_CONFIRMED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
+**Expected:** `mail_send_reply` first presents a compact MCP form elicitation that looks like a Gmail compose review: From / To / Cc / Bcc / Reply to / Reply, then a boxed Message. `Reply to` is the selected source-message subject; the card says Mail generates the actual reply subject. Ordinary values render unquoted; hostile headers and body lines JSON-encode so they cannot forge trusted labels. The native acceptance action is the sole final approval; no extra checkbox or preliminary chat confirmation is required. Only an accepted confirmation can invoke the JXA dispatcher, which replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`; an unavailable or declined form fails with `CONFIRMATION_UNAVAILABLE` or `SEND_NOT_CONFIRMED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
 
 ### P5 — Broad search reports incompleteness
 
@@ -97,11 +97,23 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 **Expected:** no send reaches the bridge. Prompted mode requires an accepted MCP confirmation of the reviewed fields, while direct send mode requires a non-empty environment allowlist; both require exact confirmation of the sender, recipients, body, and new-message subject or reply-to context. `mail_send_draft`, forward sending, attachment sending, and bulk sending remain absent.
 
+### N2a — Saved permission replacement requires the host-supported review
+
+**Given:** an exact mode and complete account selection.
+
+**Expected:** an MCP Apps host renders the inline card without writing; only its Save button calls the app-only finalizer with the private proposal. A host without Apps receives a native form containing the exact scope and saves only on acceptance; it never advertises the private finalizer. Decline/cancel save nothing. A host with neither capability receives `CONFIRMATION_UNAVAILABLE` before account verification. Direct send mode remains unavailable through preferences.
+
 ### N2b — Unknown send outcome is not retried
 
 **Given:** Mail.app is asked to send one approved message but the Apple Event times out or fails ambiguously.
 
 **Expected:** return `MUTATION_OUTCOME_UNKNOWN`; do not delete the possible outbound object and do not retry. The user inspects Mail.app or Sent mail before deciding on a new action.
+
+### N2c — Access-card host lifecycle and proposal capacity
+
+**Given:** a fake MCP Apps or OpenAI widget host with delayed output/private metadata, a missing connection response, duplicate result notifications, or an unanswered save.
+
+**Expected:** delayed host updates populate the card; **Save access** remains disabled until the proposal, private identifier, and a callable bridge are ready. One click issues one commit, and notifications cannot re-enable saving while it is pending or after cancellation. Host requests time out after 30 seconds with a visible error and no automatic retry. Missing, malformed, or unsuccessful save results never display **Access saved**. The six retained proposals remain usable until their ten-minute deadlines; only preparing a seventh proposal evicts the oldest.
 
 ### N3 — Prompt injection, account escape, and oversized query are contained
 

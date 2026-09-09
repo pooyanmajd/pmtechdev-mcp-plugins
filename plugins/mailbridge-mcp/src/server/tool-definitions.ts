@@ -50,6 +50,26 @@ const WRITE_IDEMPOTENT_ANNOTATIONS = Object.freeze({
   openWorldHint: false,
 });
 
+// Saving access preferences replaces the complete persisted mode/account list.
+// It can revoke prior access as well as grant new access, so describing it as
+// additive-only would make host permission UI materially misleading.
+const PREFERENCES_ANNOTATIONS = Object.freeze({
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+});
+
+// Preparing a proposal only reads local state and creates a short-lived,
+// process-local UI session. The separate app-only commit tool is the sole
+// persistent mutation boundary.
+const PREFERENCES_REVIEW_ANNOTATIONS = Object.freeze({
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+});
+
 const DRAFT_ANNOTATIONS = Object.freeze({
   readOnlyHint: false,
   destructiveHint: false,
@@ -69,6 +89,34 @@ const SEND_ANNOTATIONS = Object.freeze({
 // user's behalf.
 const REQUIRES_USER_INTERACTION_META = Object.freeze({
   "anthropic/requiresUserInteraction": true,
+});
+
+export const ACCESS_PREFERENCES_FORM_OPTIONS = Object.freeze({
+  title: "Save Access Preferences",
+  description: "Review and save one exact Mailbridge mode and complete account allowlist through a native confirmation form. Call directly after the user selects the values; do not ask for duplicate chat confirmation. Only an accepted exact-scope form saves anything. Cannot configure direct send mode or its environment allowlist. Saved settings apply after reconnecting; explicit environment variables always win.",
+  annotations: PREFERENCES_ANNOTATIONS,
+  _meta: REQUIRES_USER_INTERACTION_META,
+});
+
+export const ACCESS_PREFERENCES_UI_URI = "ui://mailbridge/access-preferences-v1.html";
+
+const ACCESS_PREFERENCES_REVIEW_META = Object.freeze({
+  ui: {
+    resourceUri: ACCESS_PREFERENCES_UI_URI,
+    visibility: ["model", "app"],
+  },
+  "openai/outputTemplate": ACCESS_PREFERENCES_UI_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Preparing access card…",
+  "openai/toolInvocation/invoked": "Access card ready",
+});
+
+const ACCESS_PREFERENCES_COMMIT_META = Object.freeze({
+  ui: { visibility: ["app"] },
+  "openai/visibility": "private",
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Saving access…",
+  "openai/toolInvocation/invoked": "Access saved",
 });
 
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
@@ -155,7 +203,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_send_message",
     title: "Send Mail Message",
-    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires mode and account allowlist environment variables. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
+    description: "Send one new attachment-free message through Apple Mail. In prompted mode, call immediately after resolving the user's exact send fields with confirmed=true; Mailbridge's native exact-content dialog is the sole final approval, so do not ask for duplicate chat approval. In direct send mode, an explicit account allowlist and exact chat approval are required before confirmed=true. Success means Mail accepted the message for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -164,7 +212,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "mail_send_reply",
     title: "Send Mail Reply",
-    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. The review shows the source subject as Reply to because Mail generates the outgoing reply subject. Prompted mode requires a fresh client confirmation; direct send mode requires mode and account allowlist environment variables. Success means Mail accepted the reply for sending, not that the recipient received it.",
+    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve the expected To/CC/BCC recipients exactly, and the outgoing body is replaced with the reviewed body. In prompted mode, call immediately after resolving the exact fields with confirmed=true; Mailbridge's native exact-content dialog is the sole final approval, so do not ask for duplicate chat approval. Direct send mode requires an explicit account allowlist and exact chat approval first. Success means Mail accepted the reply for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -189,11 +237,20 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   },
   {
     name: "mailbridge_set_access_preferences",
-    title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot configure direct send mode or the effective allowlist used by that mode: both require manual environment-variable changes by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    title: "Review Access Preferences",
+    description: "Open Mailbridge's inline access card for one exact mode and complete account allowlist. Call this directly after the user selects the values; do not ask for a duplicate chat confirmation. This tool only prepares the review card and never saves by itself. The user must press Save access inside the card, which invokes an app-only commit tool hidden from the model. Available in every mode, including read-only. Cannot set direct send mode; that remains a manual environment-variable change. Saved settings apply after reconnecting, and explicitly set environment variables always win.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
-    annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
+    annotations: PREFERENCES_REVIEW_ANNOTATIONS,
     allowedModes: ALL_MODES,
-    _meta: REQUIRES_USER_INTERACTION_META,
+    _meta: ACCESS_PREFERENCES_REVIEW_META,
+  },
+  {
+    name: "mailbridge_commit_access_preferences",
+    title: "Save Access Preferences",
+    description: "App-only finalizer for the Mailbridge access card. It accepts only a short-lived opaque proposal prepared by mailbridge_set_access_preferences and saves that exact mode/account replacement. Never call this from chat or expose its proposal identifier.",
+    inputSchema: inputSchemas.mailbridge_commit_access_preferences,
+    annotations: PREFERENCES_ANNOTATIONS,
+    allowedModes: ALL_MODES,
+    _meta: ACCESS_PREFERENCES_COMMIT_META,
   },
 ];

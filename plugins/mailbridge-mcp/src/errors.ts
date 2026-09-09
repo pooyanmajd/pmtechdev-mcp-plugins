@@ -7,6 +7,8 @@ export const MAILBRIDGE_ERROR_CODES = [
   "READ_ONLY",
   "CONFIRMATION_UNAVAILABLE",
   "SEND_NOT_CONFIRMED",
+  "PREFERENCES_NOT_CONFIRMED",
+  "PREFERENCES_PROPOSAL_EXPIRED",
   "AUTOMATION_BUSY",
   "MUTATION_OUTCOME_UNKNOWN",
   "SEND_REJECTED",
@@ -34,8 +36,10 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   NOT_FOUND: "The requested Mail item was not found or is not accessible.",
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
-  CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required send confirmation.",
+  CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required inline confirmation.",
   SEND_NOT_CONFIRMED: "No explicit approval was received for this send; no message was submitted.",
+  PREFERENCES_NOT_CONFIRMED: "No explicit approval was received; no access preferences were saved.",
+  PREFERENCES_PROPOSAL_EXPIRED: "This access proposal expired or was replaced. Open a fresh Mailbridge access card.",
   AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
   SEND_REJECTED: "Apple Mail did not accept the message for sending.",
@@ -52,7 +56,7 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<MailbridgeErrorCode, string>> = Objec
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",
   LOCAL_PREFERENCES_WRITE_FAILED: "Mailbridge could not save local access preferences to disk.",
-  CONFIRMATION_BUSY: "Mailbridge has too many send confirmations already pending. Wait before retrying.",
+  CONFIRMATION_BUSY: "Mailbridge has too many confirmations already pending. Wait before retrying.",
 });
 
 export class MailbridgeError extends Error {

@@ -4,6 +4,24 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+### Added
+
+- Responsive access review with account chips, a capability ledger, relevant warnings, light/dark themes, and explicit Save/Cancel actions. MCP Apps hosts receive the inline card; other hosts use a native exact-scope confirmation form. Hosts supporting neither fail clearly without saving.
+- App-only access commits use private, short-lived proposal identifiers. Native form acceptance saves the same immutable proposal without exposing the commit tool to non-Apps clients. Neither flow can configure direct send mode or its environment allowlist.
+
+### Fixed
+
+- Delayed host data now populates the card. Save waits for a callable host bridge, times out after 30 seconds without an automatic retry, and reports success only for an explicit `saved: true` result. Duplicate notifications cannot enable concurrent saves or substitute different reviewed fields.
+- All six retained proposals remain usable; only a seventh proposal evicts the oldest. Proposals expire at ten minutes. The card reports its height to avoid clipped controls in embedded hosts.
+- Updated Vitest and compatible transitive dependencies to patched versions after the release dependency audit.
+
+### Changed
+
+- Prompted sends use one native final confirmation with the existing compose-style exact-content preview. No extra checkbox or preliminary chat-approval round trip is required. Direct send mode still requires exact chat approval and environment-origin mode and account allowlist.
+- The preferences `confirmed` flag is optional for compatibility and never authorizes a save by itself.
+
 ## [0.5.0] - 2026-08-17
 
 ### Security

@@ -30,7 +30,8 @@ Write tools:
 Local preference tools (server self-configuration, not Mail data; available in every mode):
 
 - `mailbridge_get_access_preferences`
-- `mailbridge_set_access_preferences` (requires literal `confirmed: true`)
+- `mailbridge_set_access_preferences` (read-only inline proposal on MCP Apps hosts; native confirmed replacement on other hosts; no preliminary chat approval or caller-supplied confirmation flag)
+- `mailbridge_commit_access_preferences` (app-only, model-hidden finalizer for the short-lived exact proposal)
 
 Explicitly out of scope: sending edited drafts, forwards, attachments, or batches; permanent deletion; mailbox/rule CRUD; direct database access; arbitrary AppleScript execution; background monitoring; remote MCP hosting; and credential management.
 
@@ -65,6 +66,8 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 - List/search/get tools: `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`.
 - State and draft tools: `readOnlyHint=false`, `destructiveHint=false`, `openWorldHint=false`.
 - Send tools: `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=false`, `openWorldHint=true`.
+- `mailbridge_set_access_preferences`: `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=false`, `openWorldHint=false` on MCP Apps hosts because it only prepares an ephemeral inline review card. The native-form fallback instead declares `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=true`, `openWorldHint=false` and saves only after acceptance.
+- `mailbridge_commit_access_preferences`: `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=true`, `openWorldHint=false` because it replaces the complete persisted permission record and is callable only by the card.
 
 ## Error model
 

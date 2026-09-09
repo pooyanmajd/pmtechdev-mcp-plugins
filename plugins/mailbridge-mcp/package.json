@@ -1,6 +1,6 @@
 {
   "name": "mailbridge-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A local, safety-first MCP server for Apple Mail on macOS",
   "homepage": "https://github.com/pooyanmajd/pmtechdev-mcp-plugins/tree/main/plugins/mailbridge-mcp#readme",
   "repository": {
@@ -66,13 +66,13 @@
     "@eslint/js": "9.39.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@types/node": "24.10.1",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "eslint": "9.39.2",
     "tsup": "8.5.1",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.64.0",
-    "vitest": "4.1.10",
+    "vitest": "4.1.11",
     "zod": "4.4.3"
   }
 }

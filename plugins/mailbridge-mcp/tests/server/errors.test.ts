@@ -20,6 +20,14 @@ describe("public errors", () => {
       code: "SEND_CONTENT_CHANGED",
       message: "Apple Mail changed the approved outgoing content before sending.",
     });
+    expect(toPublicError(new MailbridgeError("PREFERENCES_NOT_CONFIRMED"))).toMatchObject({
+      code: "PREFERENCES_NOT_CONFIRMED",
+      message: "No explicit approval was received; no access preferences were saved.",
+    });
+    expect(toPublicError(new MailbridgeError("PREFERENCES_PROPOSAL_EXPIRED"))).toMatchObject({
+      code: "PREFERENCES_PROPOSAL_EXPIRED",
+      message: "This access proposal expired or was replaced. Open a fresh Mailbridge access card.",
+    });
   });
 
   it("normalizes bridge validation codes and unknown failures", () => {

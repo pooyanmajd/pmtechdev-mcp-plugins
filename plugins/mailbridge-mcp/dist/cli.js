@@ -3109,9 +3109,28 @@ var require_utils = __commonJS({
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
     var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
+    var isPort = RegExp.prototype.test.bind(/^\d*$/u);
     var isHexPair = RegExp.prototype.test.bind(/^[\da-f]{2}$/iu);
     var isUnreserved = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu);
-    var isPathCharacter = RegExp.prototype.test.bind(/^[\da-z\-._~!$&'()*+,;=:@/]$/iu);
+    var isPathCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/]$/u);
+    var isQueryFragmentCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/?]$/u);
+    var isUserinfoCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:]$/u);
+    var BYTE_HEX = new Array(256);
+    {
+      const HEX_DIGITS = "0123456789ABCDEF";
+      for (let i = 0; i < 256; i++) {
+        BYTE_HEX[i] = "%" + HEX_DIGITS[i >> 4] + HEX_DIGITS[i & 15];
+      }
+    }
+    function percentEncodeNonAscii(cp) {
+      if (cp < 2048) {
+        return BYTE_HEX[192 | cp >> 6] + BYTE_HEX[128 | cp & 63];
+      }
+      if (cp < 65536) {
+        return BYTE_HEX[224 | cp >> 12] + BYTE_HEX[128 | cp >> 6 & 63] + BYTE_HEX[128 | cp & 63];
+      }
+      return BYTE_HEX[240 | cp >> 18] + BYTE_HEX[128 | cp >> 12 & 63] + BYTE_HEX[128 | cp >> 6 & 63] + BYTE_HEX[128 | cp & 63];
+    }
     function stringArrayToHexStripped(input) {
       let acc = "";
       let code = 0;
@@ -3136,91 +3155,105 @@ var require_utils = __commonJS({
       }
       return acc;
     }
+    var isHextet = RegExp.prototype.test.bind(/^[\dA-Fa-f]{1,4}$/);
+    var isIPvFuture = RegExp.prototype.test.bind(/^[vV][\dA-Fa-f]+\.[A-Za-z\d\-._~!$&'()*+,;=:]+$/);
+    var isZoneCharacter = RegExp.prototype.test.bind(/^[A-Za-z\d\-._~]$/);
     var nonSimpleDomain = RegExp.prototype.test.bind(/[^!"$&'()*+,\-.;=_`a-z{}~]/u);
-    function consumeIsZone(buffer) {
-      buffer.length = 0;
-      return true;
-    }
-    function consumeHextets(buffer, address, output) {
-      if (buffer.length) {
-        const hex3 = stringArrayToHexStripped(buffer);
-        if (hex3 !== "") {
-          address.push(hex3);
-        } else {
-          output.error = true;
-          return false;
+    function isZoneIdentifier(zone) {
+      if (zone.length === 0) return false;
+      for (let i = 0; i < zone.length; i++) {
+        if (isZoneCharacter(zone[i])) continue;
+        if (zone[i] === "%" && i + 2 < zone.length && isHexPair(zone.slice(i + 1, i + 3))) {
+          i += 2;
+          continue;
         }
-        buffer.length = 0;
+        return false;
       }
       return true;
     }
-    function getIPV6(input) {
-      let tokenCount = 0;
-      const output = { error: false, address: "", zone: "" };
-      const address = [];
-      const buffer = [];
-      let endipv6Encountered = false;
-      let endIpv6 = false;
-      let consume = consumeHextets;
-      for (let i = 0; i < input.length; i++) {
-        const cursor = input[i];
-        if (cursor === "[" || cursor === "]") {
-          continue;
-        }
-        if (cursor === ":") {
-          if (endipv6Encountered === true) {
-            endIpv6 = true;
+    function compressIPv6ZeroRun(hextets) {
+      let bestStart = -1;
+      let bestLength = 0;
+      let runStart = -1;
+      let runLength = 0;
+      for (let i = 0; i < hextets.length; i++) {
+        if (hextets[i] === "0") {
+          if (runStart === -1) runStart = i;
+          runLength++;
+          if (runLength > bestLength) {
+            bestLength = runLength;
+            bestStart = runStart;
           }
-          if (!consume(buffer, address, output)) {
-            break;
-          }
-          if (++tokenCount > 7) {
-            output.error = true;
-            break;
-          }
-          if (i > 0 && input[i - 1] === ":") {
-            endipv6Encountered = true;
-          }
-          address.push(":");
-          continue;
-        } else if (cursor === "%") {
-          if (!consume(buffer, address, output)) {
-            break;
-          }
-          consume = consumeIsZone;
         } else {
-          buffer.push(cursor);
-          continue;
+          runStart = -1;
+          runLength = 0;
         }
       }
-      if (buffer.length) {
-        if (consume === consumeIsZone) {
-          output.zone = buffer.join("");
-        } else if (endIpv6) {
-          address.push(buffer.join(""));
-        } else {
-          address.push(stringArrayToHexStripped(buffer));
-        }
+      if (bestLength < 2) return hextets.join(":");
+      const head = hextets.slice(0, bestStart).join(":");
+      const tail = hextets.slice(bestStart + bestLength).join(":");
+      return head + "::" + tail;
+    }
+    function normalizeIPv6Address(input) {
+      const compression = input.indexOf("::");
+      if (compression !== -1 && input.indexOf("::", compression + 1) !== -1) return void 0;
+      const left = compression === -1 ? input.split(":") : input.slice(0, compression).split(":");
+      const right = compression === -1 ? [] : input.slice(compression + 2).split(":");
+      if (compression !== -1) {
+        if (left.length === 1 && left[0] === "") left.length = 0;
+        if (right.length === 1 && right[0] === "") right.length = 0;
       }
-      output.address = address.join("");
-      return output;
+      const parts = left.concat(right);
+      let hextetCount = 0;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part === "") return void 0;
+        if (part.indexOf(".") !== -1) {
+          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
+          hextetCount += 2;
+          continue;
+        }
+        if (!isHextet(part)) return void 0;
+        parts[i] = parseInt(part, 16).toString(16);
+        hextetCount++;
+      }
+      if (compression === -1) {
+        if (hextetCount !== 8) return void 0;
+        return compressIPv6ZeroRun(parts);
+      }
+      if (hextetCount >= 8) return void 0;
+      const expanded = parts.slice(0, left.length);
+      for (let i = hextetCount; i < 8; i++) expanded.push("0");
+      for (let i = left.length; i < parts.length; i++) expanded.push(parts[i]);
+      return compressIPv6ZeroRun(expanded);
     }
     function normalizeIPv6(host) {
-      if (findToken(host, ":") < 2) {
-        return { host, isIPV6: false };
+      const bracketed = host[0] === "[" && host[host.length - 1] === "]";
+      const hasBracket = host[0] === "[" || host[host.length - 1] === "]";
+      if (hasBracket && !bracketed) return { host, isIPV6: false, error: true };
+      let input = bracketed ? host.slice(1, -1) : host;
+      if (bracketed && isIPvFuture(input)) {
+        input = input.toLowerCase();
+        return { host: `[${input}]`, escapedHost: input, isIPV6: false, isIPVFuture: true };
       }
-      const ipv63 = getIPV6(host);
-      if (!ipv63.error) {
-        let newHost = ipv63.address;
-        let escapedHost = ipv63.address;
-        if (ipv63.zone) {
-          newHost += "%" + ipv63.zone;
-          escapedHost += "%25" + ipv63.zone;
-        }
-        return { host: newHost, isIPV6: true, escapedHost };
-      } else {
-        return { host, isIPV6: false };
+      if (findToken(input, ":") < 2) {
+        return { host, isIPV6: false, error: bracketed };
       }
+      let zoneIdentifier = "";
+      const zoneSeparator = input.indexOf("%");
+      if (zoneSeparator !== -1) {
+        const separatorLength = input.slice(zoneSeparator, zoneSeparator + 3).toLowerCase() === "%25" ? 3 : 1;
+        zoneIdentifier = input.slice(zoneSeparator + separatorLength);
+        if (!isZoneIdentifier(zoneIdentifier)) return { host, isIPV6: false, error: true };
+        input = input.slice(0, zoneSeparator);
+      }
+      const address = normalizeIPv6Address(input);
+      if (address === void 0) return { host, isIPV6: false, error: true };
+      return {
+        host: address + (zoneIdentifier ? "%" + zoneIdentifier : ""),
+        escapedHost: address + (zoneIdentifier ? "%25" + zoneIdentifier : ""),
+        isIPV6: true
+      };
     }
     function findToken(str, token) {
       let ind = 0;
@@ -3339,7 +3372,8 @@ var require_utils = __commonJS({
     function normalizePathEncoding(input) {
       let output = "";
       for (let i = 0; i < input.length; i++) {
-        if (input[i] === "%" && i + 2 < input.length) {
+        const ch = input[i];
+        if (ch === "%" && i + 2 < input.length) {
           const hex3 = input.slice(i + 1, i + 3);
           if (isHexPair(hex3)) {
             const normalizedHex = hex3.toUpperCase();
@@ -3353,10 +3387,152 @@ var require_utils = __commonJS({
             continue;
           }
         }
-        if (isPathCharacter(input[i])) {
-          output += input[i];
+        if (isPathCharacter(ch)) {
+          output += ch;
         } else {
-          output += escape(input[i]);
+          const code = input.charCodeAt(i);
+          if (code < 128) {
+            output += isEscapeSafe(code) ? ch : BYTE_HEX[code];
+          } else if (code < 55296 || code > 57343) {
+            output += percentEncodeNonAscii(code);
+          } else if (code <= 56319 && i + 1 < input.length) {
+            const low = input.charCodeAt(i + 1);
+            if (low >= 56320 && low <= 57343) {
+              output += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
+              i++;
+            } else {
+              output += percentEncodeNonAscii(65533);
+            }
+          } else {
+            output += percentEncodeNonAscii(65533);
+          }
+        }
+      }
+      return output;
+    }
+    function serializePathEncoding(input, pathNoScheme = false) {
+      let output = "";
+      let firstSegment = pathNoScheme && input[0] !== "/";
+      for (let i = 0; i < input.length; i++) {
+        const ch = input[i];
+        if (ch === "%" && i + 2 < input.length) {
+          const hex3 = input.slice(i + 1, i + 3);
+          if (isHexPair(hex3)) {
+            output += "%" + hex3.toUpperCase();
+            i += 2;
+            continue;
+          }
+        }
+        if (ch === "/") {
+          firstSegment = false;
+        }
+        if (isPathCharacter(ch) && (ch !== ":" || !firstSegment)) {
+          output += ch;
+        } else {
+          const code = input.charCodeAt(i);
+          if (code < 128) {
+            output += BYTE_HEX[code];
+          } else if (code < 55296 || code > 57343) {
+            output += percentEncodeNonAscii(code);
+          } else if (code <= 56319 && i + 1 < input.length) {
+            const low = input.charCodeAt(i + 1);
+            if (low >= 56320 && low <= 57343) {
+              output += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
+              i++;
+            } else {
+              output += percentEncodeNonAscii(65533);
+            }
+          } else {
+            output += percentEncodeNonAscii(65533);
+          }
+        }
+      }
+      return output;
+    }
+    function encodeComponent(input, isAllowed) {
+      let output = "";
+      for (let i = 0; i < input.length; i++) {
+        const ch = input[i];
+        if (ch === "%" && i + 2 < input.length) {
+          const hex3 = input.slice(i + 1, i + 3);
+          if (isHexPair(hex3)) {
+            output += "%" + hex3.toUpperCase();
+            i += 2;
+            continue;
+          }
+        }
+        if (isAllowed(ch)) {
+          output += ch;
+        } else {
+          const code = input.charCodeAt(i);
+          if (code < 128) {
+            output += BYTE_HEX[code];
+          } else if (code < 55296 || code > 57343) {
+            output += percentEncodeNonAscii(code);
+          } else if (code <= 56319 && i + 1 < input.length) {
+            const low = input.charCodeAt(i + 1);
+            if (low >= 56320 && low <= 57343) {
+              output += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
+              i++;
+            } else {
+              output += percentEncodeNonAscii(65533);
+            }
+          } else {
+            output += percentEncodeNonAscii(65533);
+          }
+        }
+      }
+      return output;
+    }
+    function encodeUserinfo(input) {
+      return encodeComponent(input, isUserinfoCharacter);
+    }
+    function encodeQuery(input) {
+      return encodeComponent(input, isQueryFragmentCharacter);
+    }
+    function encodeFragment(input) {
+      return encodeComponent(input, isQueryFragmentCharacter);
+    }
+    function isEscapeSafe(cp) {
+      return cp >= 48 && cp <= 57 || cp >= 65 && cp <= 90 || cp >= 97 && cp <= 122 || cp === 42 || cp === 43 || cp === 45 || cp === 46 || cp === 47 || cp === 64 || cp === 95;
+    }
+    function normalizeQueryFragmentEncoding(input) {
+      let output = "";
+      for (let i = 0; i < input.length; i++) {
+        const ch = input[i];
+        if (ch === "%" && i + 2 < input.length) {
+          const hex3 = input.slice(i + 1, i + 3);
+          if (isHexPair(hex3)) {
+            const normalizedHex = hex3.toUpperCase();
+            const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
+            if (isUnreserved(decoded)) {
+              output += decoded;
+            } else {
+              output += "%" + normalizedHex;
+            }
+            i += 2;
+            continue;
+          }
+        }
+        if (isQueryFragmentCharacter(ch)) {
+          output += ch;
+        } else {
+          const code = input.charCodeAt(i);
+          if (code < 128) {
+            output += isEscapeSafe(code) ? ch : BYTE_HEX[code];
+          } else if (code < 55296 || code > 57343) {
+            output += percentEncodeNonAscii(code);
+          } else if (code <= 56319 && i + 1 < input.length) {
+            const low = input.charCodeAt(i + 1);
+            if (low >= 56320 && low <= 57343) {
+              output += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
+              i++;
+            } else {
+              output += percentEncodeNonAscii(65533);
+            }
+          } else {
+            output += percentEncodeNonAscii(65533);
+          }
         }
       }
       return output;
@@ -3379,14 +3555,18 @@ var require_utils = __commonJS({
     function recomposeAuthority(component) {
       const uriTokens = [];
       if (component.userinfo !== void 0) {
-        uriTokens.push(component.userinfo);
+        uriTokens.push(encodeUserinfo(component.userinfo));
         uriTokens.push("@");
       }
       if (component.host !== void 0) {
-        let host = unescape(component.host);
+        let host = component.host;
         if (!isIPv4(host)) {
-          const ipV6res = normalizeIPv6(host);
-          if (ipV6res.isIPV6 === true) {
+          let ipV6res = normalizeIPv6(host);
+          if (ipV6res.isIPV6 !== true && ipV6res.isIPVFuture !== true) {
+            host = normalizePercentEncoding(host, true);
+            ipV6res = normalizeIPv6(host);
+          }
+          if (ipV6res.isIPV6 === true || ipV6res.isIPVFuture === true) {
             host = `[${ipV6res.escapedHost}]`;
           } else {
             host = reescapeHostDelimiters(host, false);
@@ -3395,8 +3575,12 @@ var require_utils = __commonJS({
         uriTokens.push(host);
       }
       if (typeof component.port === "number" || typeof component.port === "string") {
+        const port = String(component.port);
+        if (!isPort(port)) {
+          throw new TypeError("URI port is malformed.");
+        }
         uriTokens.push(":");
-        uriTokens.push(String(component.port));
+        uriTokens.push(port);
       }
       return uriTokens.length ? uriTokens.join("") : void 0;
     }
@@ -3406,6 +3590,11 @@ var require_utils = __commonJS({
       reescapeHostDelimiters,
       normalizePercentEncoding,
       normalizePathEncoding,
+      serializePathEncoding,
+      normalizeQueryFragmentEncoding,
+      encodeUserinfo,
+      encodeQuery,
+      encodeFragment,
       escapePreservingEscapes,
       removeDotSegments,
       isIPv4,
@@ -3421,7 +3610,7 @@ var require_schemes = __commonJS({
   "../../node_modules/fast-uri/lib/schemes.js"(exports, module) {
     "use strict";
     var { isUUID } = require_utils();
-    var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
+    var URN_REG = /^([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-./:;=@]|%[\da-f]{2})+)$/iu;
     var supportedSchemeNames = (
       /** @type {const} */
       [
@@ -3482,9 +3671,10 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path2, query] = wsComponent.resourceName.split("?");
+        const queryIndex = wsComponent.resourceName.indexOf("?");
+        const path2 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
         wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
-        wsComponent.query = query;
+        wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
       wsComponent.fragment = void 0;
@@ -3496,7 +3686,7 @@ var require_schemes = __commonJS({
         return urnComponent;
       }
       const matches = urnComponent.path.match(URN_REG);
-      if (matches) {
+      if (matches && matches[0] === urnComponent.path) {
         const scheme = options.scheme || urnComponent.scheme || "urn";
         urnComponent.nid = matches[1].toLowerCase();
         urnComponent.nss = matches[2];
@@ -3630,8 +3820,17 @@ var require_schemes = __commonJS({
 var require_fast_uri = __commonJS({
   "../../node_modules/fast-uri/index.js"(exports, module) {
     "use strict";
-    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, escapePreservingEscapes, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
+    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
+    var VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
+    var MALFORMED_SCHEME_ERROR = "URI scheme is malformed.";
+    function decodeValidScheme(scheme) {
+      const decodedScheme = unescape(String(scheme));
+      if (!VALID_SCHEME.test(decodedScheme)) {
+        throw new TypeError(MALFORMED_SCHEME_ERROR);
+      }
+      return decodedScheme;
+    }
     function normalize(uri, options) {
       if (typeof uri === "string") {
         uri = /** @type {T} */
@@ -3644,12 +3843,34 @@ var require_fast_uri = __commonJS({
     }
     function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const { parsed: baseParsed, malformedAuthorityOrPort: baseMalformed } = parseWithStatus(baseURI, schemelessOptions);
-      const { parsed: relativeParsed, malformedAuthorityOrPort: relativeMalformed } = parseWithStatus(relativeURI, schemelessOptions);
-      if (baseMalformed || relativeMalformed) {
+      const {
+        parsed: baseParsed,
+        malformedAuthorityOrPort: baseMalformed,
+        malformedPercentEncoding: baseMalformedPercentEncoding,
+        malformedSchemeSpecific: baseMalformedSchemeSpecific,
+        malformedHost: baseMalformedHost,
+        malformedScheme: baseMalformedScheme
+      } = parseWithStatus(baseURI, schemelessOptions);
+      const {
+        parsed: relativeParsed,
+        malformedAuthorityOrPort: relativeMalformed,
+        malformedPercentEncoding: relativeMalformedPercentEncoding,
+        malformedSchemeSpecific: relativeMalformedSchemeSpecific,
+        malformedHost: relativeMalformedHost,
+        malformedScheme: relativeMalformedScheme
+      } = parseWithStatus(relativeURI, schemelessOptions);
+      if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
         throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
       }
       const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
+      const resolvedHost = resolved.host;
+      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
+      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+      const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
+      if (resolved.error && !encodedASCIIHost) {
+        throw new Error(resolved.error);
+      }
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
@@ -3709,7 +3930,7 @@ var require_fast_uri = __commonJS({
     function equal(uriA, uriB, options) {
       const normalizedA = normalizeComparableURI(uriA, options);
       const normalizedB = normalizeComparableURI(uriB, options);
-      return normalizedA !== void 0 && normalizedB !== void 0 && normalizedA.toLowerCase() === normalizedB.toLowerCase();
+      return normalizedA !== void 0 && normalizedB !== void 0 && normalizedA === normalizedB;
     }
     function serialize(cmpts, opts) {
       const component = {
@@ -3730,19 +3951,22 @@ var require_fast_uri = __commonJS({
       };
       const options = Object.assign({}, opts);
       const uriTokens = [];
+      if (component.scheme) {
+        component.scheme = decodeValidScheme(component.scheme);
+      }
       const schemeHandler = getSchemeHandler(options.scheme || component.scheme);
       if (schemeHandler && schemeHandler.serialize) schemeHandler.serialize(component, options);
+      const hasAuthority = component.userinfo !== void 0 || component.host !== void 0 || component.port !== void 0;
+      const pathNoScheme = !options.skipEscape && component.scheme === void 0 && !hasAuthority;
       if (component.path !== void 0) {
         if (!options.skipEscape) {
-          component.path = escapePreservingEscapes(component.path);
-          if (component.scheme !== void 0) {
-            component.path = component.path.split("%3A").join(":");
-          }
+          component.path = serializePathEncoding(component.path, pathNoScheme);
         } else {
           component.path = normalizePercentEncoding(component.path);
         }
       }
       if (options.reference !== "suffix" && component.scheme) {
+        component.scheme = decodeValidScheme(component.scheme);
         uriTokens.push(component.scheme, ":");
       }
       const authority = recomposeAuthority(component);
@@ -3760,16 +3984,19 @@ var require_fast_uri = __commonJS({
         if (!options.absolutePath && (!schemeHandler || !schemeHandler.absolutePath)) {
           s = removeDotSegments(s);
         }
+        if (pathNoScheme) {
+          s = serializePathEncoding(s, true);
+        }
         if (authority === void 0 && s[0] === "/" && s[1] === "/") {
           s = "/%2F" + s.slice(2);
         }
         uriTokens.push(s);
       }
       if (component.query !== void 0) {
-        uriTokens.push("?", component.query);
+        uriTokens.push("?", encodeQuery(component.query));
       }
       if (component.fragment !== void 0) {
-        uriTokens.push("#", component.fragment);
+        uriTokens.push("#", encodeFragment(component.fragment));
       }
       return uriTokens.join("");
     }
@@ -3785,6 +4012,35 @@ var require_fast_uri = __commonJS({
       }
       return void 0;
     }
+    function hasMalformedPercentEncoding(component) {
+      if (component === void 0) return false;
+      let percent = component.indexOf("%");
+      while (percent !== -1) {
+        if (percent + 2 >= component.length || !/^[\da-f]{2}$/iu.test(component.slice(percent + 1, percent + 3))) {
+          return true;
+        }
+        percent = component.indexOf("%", percent + 3);
+      }
+      return false;
+    }
+    function isIPLiteral(host) {
+      return host[0] === "[" && host[host.length - 1] === "]";
+    }
+    function hasMalformedComponentPercentEncoding(matches) {
+      const host = matches[4];
+      return hasMalformedPercentEncoding(matches[3]) || host !== void 0 && !isIPLiteral(host) && hasMalformedPercentEncoding(host) || hasMalformedPercentEncoding(matches[6]) || hasMalformedPercentEncoding(matches[7]) || hasMalformedPercentEncoding(matches[8]);
+    }
+    function canonicalizeHost(parsed, options, schemeHandler, isIP) {
+      if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport) && parsed.host && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
+        try {
+          parsed.host = new URL("http://" + parsed.host).hostname;
+        } catch (e) {
+          parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
+          return true;
+        }
+      }
+      return false;
+    }
     function parseWithStatus(uri, opts) {
       const options = Object.assign({}, opts);
       const parsed = {
@@ -3797,6 +4053,11 @@ var require_fast_uri = __commonJS({
         fragment: void 0
       };
       let malformedAuthorityOrPort = false;
+      let malformedPercentEncoding = false;
+      let malformedSchemeSpecific = false;
+      let malformedHost = false;
+      let malformedIPLiteral = false;
+      let malformedScheme = false;
       let isIP = false;
       if (options.reference === "suffix") {
         if (options.scheme) {
@@ -3833,6 +4094,19 @@ var require_fast_uri = __commonJS({
         parsed.path = matches[6] || "";
         parsed.query = matches[7];
         parsed.fragment = matches[8];
+        if (parsed.scheme !== void 0) {
+          const decodedScheme = unescape(parsed.scheme);
+          if (VALID_SCHEME.test(decodedScheme)) {
+            parsed.scheme = decodedScheme.toLowerCase();
+          } else {
+            parsed.error = parsed.error || MALFORMED_SCHEME_ERROR;
+            malformedScheme = true;
+          }
+        }
+        malformedPercentEncoding = hasMalformedComponentPercentEncoding(matches);
+        if (malformedPercentEncoding) {
+          parsed.error = parsed.error || "URI contains malformed percent-encoding.";
+        }
         if (isNaN(parsed.port)) {
           parsed.port = matches[5];
         }
@@ -3844,9 +4118,16 @@ var require_fast_uri = __commonJS({
         if (parsed.host) {
           const ipv4result = isIPv4(parsed.host);
           if (ipv4result === false) {
+            const bracketedIPLiteral = isIPLiteral(parsed.host);
+            const hasIPLiteralBracket = parsed.host.indexOf("[") !== -1 || parsed.host.indexOf("]") !== -1;
             const ipv6result = normalizeIPv6(parsed.host);
-            parsed.host = ipv6result.host.toLowerCase();
-            isIP = ipv6result.isIPV6;
+            isIP = ipv6result.isIPV6 || ipv6result.isIPVFuture === true;
+            malformedIPLiteral = hasIPLiteralBracket && (!bracketedIPLiteral || ipv6result.error === true);
+            parsed.host = isIP ? ipv6result.host : ipv6result.host.toLowerCase();
+            if (malformedIPLiteral) {
+              parsed.error = parsed.error || "URI host is malformed.";
+              malformedAuthorityOrPort = true;
+            }
           } else {
             isIP = true;
           }
@@ -3864,42 +4145,36 @@ var require_fast_uri = __commonJS({
           parsed.error = parsed.error || "URI is not a " + options.reference + " reference.";
         }
         const schemeHandler = getSchemeHandler(options.scheme || parsed.scheme);
-        if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport)) {
-          if (parsed.host && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
-            try {
-              parsed.host = new URL("http://" + parsed.host).hostname;
-            } catch (e) {
-              parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
-            }
-          }
+        if (!malformedIPLiteral) {
+          malformedHost = canonicalizeHost(parsed, options, schemeHandler, isIP);
         }
         if (!schemeHandler || schemeHandler && !schemeHandler.skipNormalize) {
           if (uri.indexOf("%") !== -1) {
-            if (parsed.scheme !== void 0) {
-              parsed.scheme = unescape(parsed.scheme);
-            }
-            if (parsed.host !== void 0) {
-              parsed.host = reescapeHostDelimiters(unescape(parsed.host), isIP);
+            if (parsed.host !== void 0 && !malformedIPLiteral) {
+              const host = isIP ? parsed.host : normalizePercentEncoding(parsed.host, true);
+              parsed.host = reescapeHostDelimiters(host, isIP);
             }
           }
           if (parsed.path) {
             parsed.path = normalizePathEncoding(parsed.path);
           }
+          if (parsed.query) {
+            parsed.query = normalizeQueryFragmentEncoding(parsed.query);
+          }
           if (parsed.fragment) {
-            try {
-              parsed.fragment = encodeURI(decodeURIComponent(parsed.fragment));
-            } catch {
-              parsed.error = parsed.error || "URI malformed";
-            }
+            parsed.fragment = normalizeQueryFragmentEncoding(parsed.fragment);
           }
         }
         if (schemeHandler && schemeHandler.parse) {
           schemeHandler.parse(parsed, options);
+          if (schemeHandler === SCHEMES.urn && parsed.nid === void 0) {
+            malformedSchemeSpecific = true;
+          }
         }
       } else {
         parsed.error = parsed.error || "URI can not be parsed.";
       }
-      return { parsed, malformedAuthorityOrPort };
+      return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
     function parse3(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
@@ -3908,20 +4183,28 @@ var require_fast_uri = __commonJS({
       return normalizeStringWithStatus(uri, opts).normalized;
     }
     function normalizeStringWithStatus(uri, opts) {
-      const { parsed, malformedAuthorityOrPort } = parseWithStatus(uri, opts);
+      const { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = parseWithStatus(uri, opts);
       return {
-        normalized: malformedAuthorityOrPort ? uri : serialize(parsed, opts),
-        malformedAuthorityOrPort
+        normalized: malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? uri : serialize(parsed, opts),
+        malformedAuthorityOrPort,
+        malformedPercentEncoding,
+        malformedSchemeSpecific,
+        malformedHost,
+        malformedScheme
       };
     }
     function normalizeComparableURI(uri, opts) {
-      if (typeof uri === "string") {
-        const { normalized, malformedAuthorityOrPort } = normalizeStringWithStatus(uri, opts);
-        return malformedAuthorityOrPort ? void 0 : normalized;
+      if (typeof uri !== "string" && typeof uri !== "object") {
+        return void 0;
       }
-      if (typeof uri === "object") {
-        return serialize(uri, opts);
+      let value;
+      try {
+        value = typeof uri === "string" ? uri : serialize(uri, opts);
+      } catch {
+        return void 0;
       }
+      const { normalized, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = normalizeStringWithStatus(value, opts);
+      return malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? void 0 : normalized;
     }
     var fastUri = {
       SCHEMES,
@@ -23172,6 +23455,8 @@ var MAILBRIDGE_ERROR_CODES = [
   "READ_ONLY",
   "CONFIRMATION_UNAVAILABLE",
   "SEND_NOT_CONFIRMED",
+  "PREFERENCES_NOT_CONFIRMED",
+  "PREFERENCES_PROPOSAL_EXPIRED",
   "AUTOMATION_BUSY",
   "MUTATION_OUTCOME_UNKNOWN",
   "SEND_REJECTED",
@@ -23196,8 +23481,10 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   NOT_FOUND: "The requested Mail item was not found or is not accessible.",
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
-  CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required send confirmation.",
+  CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required inline confirmation.",
   SEND_NOT_CONFIRMED: "No explicit approval was received for this send; no message was submitted.",
+  PREFERENCES_NOT_CONFIRMED: "No explicit approval was received; no access preferences were saved.",
+  PREFERENCES_PROPOSAL_EXPIRED: "This access proposal expired or was replaced. Open a fresh Mailbridge access card.",
   AUTOMATION_BUSY: "Mailbridge has too many automation operations queued. Wait before retrying.",
   MUTATION_OUTCOME_UNKNOWN: "Mail did not confirm the modifying operation. Inspect Mail before retrying.",
   SEND_REJECTED: "Apple Mail did not accept the message for sending.",
@@ -23213,7 +23500,7 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   UNSUPPORTED_ATTACHMENT: "Apple Mail cannot provide this attachment safely.",
   RESPONSE_TOO_LARGE: "Apple Mail returned more data than Mailbridge permits.",
   LOCAL_PREFERENCES_WRITE_FAILED: "Mailbridge could not save local access preferences to disk.",
-  CONFIRMATION_BUSY: "Mailbridge has too many send confirmations already pending. Wait before retrying."
+  CONFIRMATION_BUSY: "Mailbridge has too many confirmations already pending. Wait before retrying."
 });
 var MailbridgeError = class extends Error {
   constructor(code, message = SAFE_ERROR_MESSAGES[code], options) {
@@ -32345,7 +32632,7 @@ var createForwardDraftInputSchema = external_exports.object({
   body: external_exports.string().max(MAX_OUTGOING_BODY_CHARS).default("")
 }).strict().refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
 var confirmedSend = external_exports.literal(true).describe(
-  "Must be true only after the user has explicitly approved the exact recipients, subject, and body."
+  "In prompted mode, set true once the exact send fields are resolved so Mailbridge can request its native final approval. In direct send mode, set true only after the exact content was shown and approved in chat."
 );
 var substantiveBody = external_exports.string().max(MAX_OUTGOING_BODY_CHARS).refine((body) => body.trim().length > 0, { message: "A non-empty message body is required." });
 var sendSubject = external_exports.string().max(MAX_SUBJECT_CHARS).refine(
@@ -32396,8 +32683,8 @@ var previewOutboundInputSchema = external_exports.discriminatedUnion("kind", [
   }).strict()
 ]);
 var mailbridgeGetAccessPreferencesInputSchema = external_exports.object({}).strict();
-var confirmedAccessPreferences = external_exports.literal(true).describe(
-  "Must be true only after the exact mode and account list above were shown to and approved by the user in chat."
+var legacyConfirmedAccessPreferences = external_exports.literal(true).optional().describe(
+  "Deprecated compatibility flag. Omit it: Mailbridge requires approval through its inline access card or native confirmation form before saving."
 );
 var mailbridgeSetAccessPreferencesInputSchema = external_exports.object({
   mode: external_exports.enum(LOCALLY_SETTABLE_MODES).describe(
@@ -32406,7 +32693,10 @@ var mailbridgeSetAccessPreferencesInputSchema = external_exports.object({
   allowedAccounts: external_exports.array(allowlistEmail).min(1).max(MAX_LOCAL_ALLOWED_ACCOUNTS).describe(
     "Complete replacement list of Mail.app account email addresses to allow. Replaces any previously saved list; this is not a delta/append."
   ),
-  confirmed: confirmedAccessPreferences
+  confirmed: legacyConfirmedAccessPreferences
+}).strict();
+var mailbridgeCommitAccessPreferencesInputSchema = external_exports.object({
+  proposalId: external_exports.string().uuid().describe("Opaque, short-lived proposal identifier delivered only to the Mailbridge access card.")
 }).strict();
 var toolOutputSchema = external_exports.object({
   ok: external_exports.boolean(),
@@ -32431,17 +32721,22 @@ var inputSchemas = {
   mail_send_reply: sendReplyInputSchema,
   mail_preview_outbound: previewOutboundInputSchema,
   mailbridge_get_access_preferences: mailbridgeGetAccessPreferencesInputSchema,
-  mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema
+  mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema,
+  mailbridge_commit_access_preferences: mailbridgeCommitAccessPreferencesInputSchema
 };
 
 // src/server/service.ts
+import { randomUUID as randomUUID2 } from "crypto";
 var MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 var MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
-function success2(data) {
+var MAX_ACCESS_PROPOSALS = 6;
+var ACCESS_PROPOSAL_TTL_MS = 10 * 60 * 1e3;
+function success2(data, meta3) {
   const structuredContent = { ok: true, data };
   return {
     content: [{ type: "text", text: JSON.stringify(structuredContent) }],
-    structuredContent
+    structuredContent,
+    ...meta3 === void 0 ? {} : { _meta: meta3 }
   };
 }
 function failure(error51) {
@@ -32482,11 +32777,43 @@ var MailbridgeToolService = class {
   // (which can each wait minutes on a human) independently of Mail.app/JXA calls,
   // so neither can starve the other.
   confirmationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
+  preferencesQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
+  accessProposals = /* @__PURE__ */ new Map();
   async invoke(name, rawInput) {
     try {
+      if (name === "mailbridge_set_access_preferences") {
+        const prepared = await this.prepareAccessPreferences(rawInput);
+        return success2(prepared.proposal, {
+          "mailbridge/accessProposal": { proposalId: prepared.proposalId }
+        });
+      }
       return success2(await this.execute(name, rawInput));
     } catch (error51) {
       return failure(error51);
+    }
+  }
+  async invokeAccessPreferencesWithConfirmation(rawInput, confirm) {
+    let proposalId;
+    try {
+      if (confirm === void 0) throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      const prepared = await this.prepareAccessPreferences(rawInput);
+      proposalId = prepared.proposalId;
+      let approved;
+      try {
+        approved = await this.confirmationQueue.run(
+          () => confirm(prepared.proposal),
+          () => new MailbridgeError("CONFIRMATION_BUSY")
+        );
+      } catch (error51) {
+        if (error51 instanceof MailbridgeError && error51.code === "CONFIRMATION_BUSY") throw error51;
+        throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      }
+      if (!approved) throw new MailbridgeError("PREFERENCES_NOT_CONFIRMED");
+      return success2(await this.commitAccessPreferences({ proposalId }));
+    } catch (error51) {
+      return failure(error51);
+    } finally {
+      if (proposalId !== void 0) this.accessProposals.delete(proposalId);
     }
   }
   requireDraftsMode() {
@@ -32556,6 +32883,95 @@ var MailbridgeToolService = class {
         throw error51;
       }
     });
+  }
+  pruneAccessProposals(nowMs) {
+    for (const [id, pending] of this.accessProposals) {
+      if (nowMs - pending.createdAtMs >= ACCESS_PROPOSAL_TTL_MS) {
+        this.accessProposals.delete(id);
+      }
+    }
+  }
+  async prepareAccessPreferences(rawInput) {
+    const input = parseInput(mailbridgeSetAccessPreferencesInputSchema, rawInput);
+    const proposedAccounts = [...new Set(input.allowedAccounts.map((account) => account.trim().toLowerCase()))];
+    const {
+      preferences: savedPreferences,
+      diagnostic: savedPreferencesDiagnostic
+    } = await readLocalPreferences(this.localPreferences.path);
+    let verification;
+    try {
+      const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
+      const known = new Set(
+        accounts.flatMap((account) => account.emailAddresses.map((address) => address.toLowerCase()))
+      );
+      verification = {
+        performed: true,
+        matchedAccounts: proposedAccounts.filter((address) => known.has(address)),
+        unmatchedAccounts: proposedAccounts.filter((address) => !known.has(address))
+      };
+    } catch {
+      verification = {
+        performed: false,
+        reason: "Could not verify the proposed addresses against live Mail.app accounts; the card will show this before saving."
+      };
+    }
+    const proposal = {
+      status: "awaiting-user",
+      activeMode: this.config.mode,
+      activeAllowedAccounts: this.config.allowedAccounts,
+      savedMode: savedPreferences?.mode,
+      savedAllowedAccounts: savedPreferences?.allowedAccounts,
+      savedPreferencesDiagnostic,
+      proposedMode: input.mode,
+      proposedAllowedAccounts: proposedAccounts,
+      verification,
+      shadowedByEnvironment: this.localPreferences.envOverrides
+    };
+    const proposalId = randomUUID2();
+    const nowMs = Date.now();
+    this.pruneAccessProposals(nowMs);
+    while (this.accessProposals.size >= MAX_ACCESS_PROPOSALS) {
+      const oldestId = this.accessProposals.keys().next().value;
+      if (oldestId === void 0) break;
+      this.accessProposals.delete(oldestId);
+    }
+    this.accessProposals.set(proposalId, { id: proposalId, createdAtMs: nowMs, proposal });
+    return { proposalId, proposal };
+  }
+  async commitAccessPreferences(rawInput) {
+    const input = parseInput(mailbridgeCommitAccessPreferencesInputSchema, rawInput);
+    return this.preferencesQueue.run(async () => {
+      const nowMs = Date.now();
+      this.pruneAccessProposals(nowMs);
+      const pending = this.accessProposals.get(input.proposalId);
+      if (pending === void 0) {
+        throw new MailbridgeError("PREFERENCES_PROPOSAL_EXPIRED");
+      }
+      if (pending.committedResult !== void 0) {
+        return pending.committedResult;
+      }
+      let saved;
+      try {
+        saved = await writeLocalPreferences(this.localPreferences.path, {
+          mode: pending.proposal.proposedMode,
+          allowedAccounts: pending.proposal.proposedAllowedAccounts
+        });
+      } catch {
+        throw new MailbridgeError("LOCAL_PREFERENCES_WRITE_FAILED");
+      }
+      const result = {
+        saved: true,
+        path: this.localPreferences.path,
+        mode: saved.mode,
+        allowedAccounts: saved.allowedAccounts,
+        verification: pending.proposal.verification,
+        effectiveImmediately: false,
+        appliesAfter: "restart-or-reconnect",
+        shadowedByEnvironment: this.localPreferences.envOverrides
+      };
+      pending.committedResult = result;
+      return result;
+    }, () => new MailbridgeError("CONFIRMATION_BUSY"));
   }
   async execute(name, rawInput) {
     switch (name) {
@@ -32731,49 +33147,826 @@ var MailbridgeToolService = class {
         return result;
       }
       case "mailbridge_set_access_preferences": {
-        const input = parseInput(mailbridgeSetAccessPreferencesInputSchema, rawInput);
-        const proposed = new Set(input.allowedAccounts.map((account) => account.trim().toLowerCase()));
-        let verification;
-        try {
-          const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
-          const known = new Set(
-            accounts.flatMap((account) => account.emailAddresses.map((address) => address.toLowerCase()))
-          );
-          verification = {
-            performed: true,
-            matchedAccounts: [...proposed].filter((address) => known.has(address)),
-            unmatchedAccounts: [...proposed].filter((address) => !known.has(address))
-          };
-        } catch {
-          verification = {
-            performed: false,
-            reason: "Could not verify the proposed addresses against live Mail.app accounts; saved anyway."
-          };
-        }
-        let saved;
-        try {
-          saved = await writeLocalPreferences(this.localPreferences.path, {
-            mode: input.mode,
-            allowedAccounts: input.allowedAccounts
-          });
-        } catch {
-          throw new MailbridgeError("LOCAL_PREFERENCES_WRITE_FAILED");
-        }
-        const result = {
-          saved: true,
-          path: this.localPreferences.path,
-          mode: saved.mode,
-          allowedAccounts: saved.allowedAccounts,
-          verification,
-          effectiveImmediately: false,
-          appliesAfter: "restart-or-reconnect",
-          shadowedByEnvironment: this.localPreferences.envOverrides
-        };
-        return result;
+        throw new MailbridgeError("INVALID_INPUT");
+      }
+      case "mailbridge_commit_access_preferences": {
+        return this.commitAccessPreferences(rawInput);
       }
     }
   }
 };
+
+// src/server/access-preferences-ui.ts
+var ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Mailbridge access</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --mb-canvas: #f4f7f8;
+      --mb-surface: rgba(255, 255, 255, 0.92);
+      --mb-surface-strong: #ffffff;
+      --mb-ink: #102128;
+      --mb-muted: #5d6b71;
+      --mb-faint: #859197;
+      --mb-line: rgba(27, 65, 79, 0.14);
+      --mb-accent: #176b89;
+      --mb-accent-strong: #0e5873;
+      --mb-on-accent: #ffffff;
+      --mb-accent-soft: #e5f3f7;
+      --mb-success: #147052;
+      --mb-success-soft: #e6f4ee;
+      --mb-warning: #8b5b13;
+      --mb-warning-soft: #fff5dc;
+      --mb-danger: #a13c3c;
+      --mb-focus: #52a9c9;
+      --mb-shadow: 0 16px 48px rgba(18, 47, 58, 0.11), 0 2px 8px rgba(18, 47, 58, 0.05);
+      --mb-radius: 22px;
+      font-family: "Avenir Next", "Segoe UI Variable", ui-sans-serif, sans-serif;
+      font-synthesis: none;
+    }
+
+    :root[data-theme="dark"] {
+      --mb-canvas: #111719;
+      --mb-surface: rgba(28, 37, 40, 0.96);
+      --mb-surface-strong: #222d31;
+      --mb-ink: #eef5f6;
+      --mb-muted: #b1bec2;
+      --mb-faint: #8c999e;
+      --mb-line: rgba(210, 235, 241, 0.14);
+      --mb-accent: #75c3dc;
+      --mb-accent-strong: #9bd7e9;
+      --mb-on-accent: #09232c;
+      --mb-accent-soft: #183943;
+      --mb-success: #7bd3ae;
+      --mb-success-soft: #17392f;
+      --mb-warning: #efc579;
+      --mb-warning-soft: #3a2d17;
+      --mb-danger: #f2a1a1;
+      --mb-focus: #9bd7e9;
+      --mb-shadow: 0 18px 54px rgba(0, 0, 0, 0.34), 0 2px 8px rgba(0, 0, 0, 0.18);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --mb-canvas: #111719;
+        --mb-surface: rgba(28, 37, 40, 0.96);
+        --mb-surface-strong: #222d31;
+        --mb-ink: #eef5f6;
+        --mb-muted: #b1bec2;
+        --mb-faint: #8c999e;
+        --mb-line: rgba(210, 235, 241, 0.14);
+        --mb-accent: #75c3dc;
+        --mb-accent-strong: #9bd7e9;
+        --mb-on-accent: #09232c;
+        --mb-accent-soft: #183943;
+        --mb-success: #7bd3ae;
+        --mb-success-soft: #17392f;
+        --mb-warning: #efc579;
+        --mb-warning-soft: #3a2d17;
+        --mb-danger: #f2a1a1;
+        --mb-focus: #9bd7e9;
+        --mb-shadow: 0 18px 54px rgba(0, 0, 0, 0.34), 0 2px 8px rgba(0, 0, 0, 0.18);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    [hidden] { display: none !important; }
+
+    html, body { margin: 0; min-width: 0; background: transparent; }
+
+    body {
+      padding: 8px;
+      color: var(--mb-ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .card {
+      position: relative;
+      width: min(100%, 680px);
+      margin: 0 auto;
+      overflow: hidden;
+      border: 1px solid var(--mb-line);
+      border-radius: var(--mb-radius);
+      background:
+        radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--mb-accent-soft) 76%, transparent) 0, transparent 36%),
+        var(--mb-surface);
+      box-shadow: var(--mb-shadow);
+    }
+
+    .accent-line {
+      height: 4px;
+      background: linear-gradient(90deg, var(--mb-accent-strong), #49a5aa 60%, #a4c96d);
+    }
+
+    .inner { padding: 22px 24px 20px; }
+
+    .header {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      border: 1px solid color-mix(in srgb, var(--mb-accent) 26%, transparent);
+      border-radius: 15px;
+      color: var(--mb-accent-strong);
+      background: var(--mb-accent-soft);
+    }
+
+    .mark svg { width: 25px; height: 25px; }
+
+    .eyebrow {
+      margin: 1px 0 4px;
+      color: var(--mb-accent-strong);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(22px, 4vw, 28px);
+      line-height: 1.14;
+      letter-spacing: -0.025em;
+      font-weight: 650;
+    }
+
+    .subtitle {
+      margin: 7px 0 0;
+      max-width: 52ch;
+      color: var(--mb-muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--mb-line);
+      border-radius: 999px;
+      color: var(--mb-muted);
+      background: color-mix(in srgb, var(--mb-surface-strong) 82%, transparent);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--mb-warning);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--mb-warning-soft) 82%, transparent);
+    }
+
+    .status-pill.saved::before { background: var(--mb-success); box-shadow: 0 0 0 3px var(--mb-success-soft); }
+    .status-pill.cancelled::before { background: var(--mb-faint); box-shadow: none; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .panel {
+      min-width: 0;
+      padding: 15px 16px;
+      border: 1px solid var(--mb-line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--mb-surface-strong) 86%, transparent);
+    }
+
+    .panel-label {
+      display: block;
+      margin-bottom: 9px;
+      color: var(--mb-faint);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mode-name {
+      color: var(--mb-ink);
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 650;
+      letter-spacing: -0.015em;
+    }
+
+    .mode-detail {
+      margin: 6px 0 0;
+      color: var(--mb-muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .accounts { display: flex; flex-wrap: wrap; gap: 7px; }
+
+    .account-chip {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 6px 9px;
+      border: 1px solid color-mix(in srgb, var(--mb-accent) 22%, var(--mb-line));
+      border-radius: 9px;
+      color: var(--mb-accent-strong);
+      background: var(--mb-accent-soft);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .permission-ledger {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid var(--mb-line);
+      border-radius: 16px;
+      background: var(--mb-line);
+    }
+
+    .permission {
+      min-width: 0;
+      padding: 13px 12px 12px;
+      background: var(--mb-surface-strong);
+    }
+
+    .permission-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      color: var(--mb-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .permission-state::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--mb-faint);
+    }
+
+    .permission.on .permission-state { color: var(--mb-success); }
+    .permission.on .permission-state::before { background: var(--mb-success); }
+    .permission.ask .permission-state { color: var(--mb-warning); }
+    .permission.ask .permission-state::before { background: var(--mb-warning); }
+
+    .permission-title {
+      display: block;
+      color: var(--mb-ink);
+      font-size: 13px;
+      line-height: 1.3;
+      font-weight: 600;
+    }
+
+    .notice-list { display: grid; gap: 8px; margin-top: 12px; }
+
+    .notice {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+      padding: 10px 12px;
+      border: 1px solid var(--mb-line);
+      border-radius: 12px;
+      color: var(--mb-muted);
+      background: color-mix(in srgb, var(--mb-surface-strong) 78%, transparent);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .notice.warning { border-color: color-mix(in srgb, var(--mb-warning) 30%, var(--mb-line)); background: var(--mb-warning-soft); color: var(--mb-warning); }
+    .notice svg { width: 17px; height: 17px; margin-top: 1px; flex: none; }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+      padding-top: 17px;
+      border-top: 1px solid var(--mb-line);
+    }
+
+    button {
+      min-height: 44px;
+      padding: 0 17px;
+      border-radius: 12px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+    }
+
+    button:focus-visible { outline: 3px solid color-mix(in srgb, var(--mb-focus) 46%, transparent); outline-offset: 2px; }
+    button:disabled { cursor: not-allowed; opacity: 0.46; }
+
+    .secondary {
+      border: 1px solid var(--mb-line);
+      color: var(--mb-muted);
+      background: var(--mb-surface-strong);
+    }
+
+    .secondary:hover:not(:disabled) { color: var(--mb-ink); border-color: color-mix(in srgb, var(--mb-accent) 36%, var(--mb-line)); }
+
+    .primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 128px;
+      border: 1px solid transparent;
+      color: var(--mb-on-accent);
+      background: var(--mb-accent-strong);
+      box-shadow: 0 5px 14px color-mix(in srgb, var(--mb-accent) 22%, transparent);
+    }
+
+    .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--mb-accent-strong) 88%, #000000); }
+
+    .spinner {
+      display: none;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+    }
+
+    .primary.loading .spinner { display: block; }
+
+    .sr-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .fatal {
+      margin-top: 12px;
+      color: var(--mb-danger);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 580px) {
+      body { padding: 4px; }
+      .inner { padding: 18px 16px 16px; }
+      .header { grid-template-columns: 44px minmax(0, 1fr); }
+      .mark { width: 44px; height: 44px; border-radius: 14px; }
+      .status-pill { grid-column: 2; justify-self: start; margin-top: 8px; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .permission-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .actions { align-items: stretch; }
+      .actions button { flex: 1; padding-inline: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card" aria-labelledby="title">
+    <div class="accent-line" aria-hidden="true"></div>
+    <div class="inner">
+      <header class="header">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.25" y="5.25" width="17.5" height="13.5" rx="3"></rect>
+            <path d="m4.4 7.2 6.1 4.8a2.4 2.4 0 0 0 3 0l6.1-4.8"></path>
+            <path d="M17.2 14.1v4.1"></path>
+            <path d="M15.15 16.15h4.1"></path>
+          </svg>
+        </div>
+        <div>
+          <p class="eyebrow">Mailbridge access</p>
+          <h1 id="title">Review before saving</h1>
+          <p class="subtitle" id="subtitle">A local permission for future sessions. Nothing changes until you save.</p>
+        </div>
+        <div class="status-pill" id="status-pill">Waiting for you</div>
+      </header>
+
+      <section class="summary-grid" aria-label="Access proposal">
+        <div class="panel">
+          <span class="panel-label">Account scope</span>
+          <div class="accounts" id="accounts"><span class="account-chip">Loading…</span></div>
+        </div>
+        <div class="panel">
+          <span class="panel-label">Permission level</span>
+          <div class="mode-name" id="mode-name">Loading…</div>
+          <p class="mode-detail" id="mode-detail">Preparing the exact capability summary.</p>
+        </div>
+      </section>
+
+      <section class="permission-ledger" id="permission-ledger" aria-label="Included capabilities"></section>
+      <section class="notice-list" id="notices" aria-label="Important details"></section>
+      <p class="fatal" id="fatal" role="alert" hidden></p>
+
+      <footer class="actions" id="actions">
+        <button type="button" class="secondary" id="cancel">Cancel</button>
+        <button type="button" class="primary" id="save" disabled>
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="save-label">Save access</span>
+        </button>
+      </footer>
+      <div class="sr-status" id="sr-status" aria-live="polite"></div>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const PROTOCOL_VERSION = '2026-01-26';
+      const COMMIT_TOOL = 'mailbridge_commit_access_preferences';
+      const REQUEST_TIMEOUT_MS = 30_000;
+      const SAVE_TIMEOUT_MESSAGE = 'The host did not confirm the save. Check saved access preferences before retrying.';
+      const pendingRequests = new Map();
+      let nextRequestId = 1;
+      let proposalId;
+      let proposal;
+      let connected = false;
+      let settled = false;
+      let saving = false;
+      let saveAttempted = false;
+      let lastHeight;
+
+      const byId = (id) => document.getElementById(id);
+      const saveButton = byId('save');
+      const cancelButton = byId('cancel');
+      const saveLabel = byId('save-label');
+      const statusPill = byId('status-pill');
+      const srStatus = byId('sr-status');
+      const fatal = byId('fatal');
+
+      const modeCopy = {
+        'read-only': {
+          name: 'Read only',
+          detail: 'Inspect mail without creating drafts or changing messages.',
+          capabilities: [
+            ['Read mail', 'on', 'Included'],
+            ['Create drafts', 'off', 'Off'],
+            ['Mail state', 'off', 'Off'],
+            ['Send mail', 'off', 'Off']
+          ]
+        },
+        drafts: {
+          name: 'Read + drafts',
+          detail: 'Inspect mail and create unsent drafts. Message state and sending stay off.',
+          capabilities: [
+            ['Read mail', 'on', 'Included'],
+            ['Create drafts', 'on', 'Included'],
+            ['Mail state', 'off', 'Off'],
+            ['Send mail', 'off', 'Off']
+          ]
+        },
+        full: {
+          name: 'Mail management',
+          detail: 'Read mail, create drafts, and mark messages read or flagged. Sending stays off.',
+          capabilities: [
+            ['Read mail', 'on', 'Included'],
+            ['Create drafts', 'on', 'Included'],
+            ['Mail state', 'on', 'Included'],
+            ['Send mail', 'off', 'Off']
+          ]
+        },
+        prompted: {
+          name: 'Prompt every send',
+          detail: 'Mail management plus a separate exact-content confirmation before each send.',
+          capabilities: [
+            ['Read mail', 'on', 'Included'],
+            ['Create drafts', 'on', 'Included'],
+            ['Mail state', 'on', 'Included'],
+            ['Send mail', 'ask', 'Ask every time']
+          ]
+        }
+      };
+
+      function withTimeout(promise, message) {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error(message)), REQUEST_TIMEOUT_MS);
+          Promise.resolve(promise).then((result) => {
+            clearTimeout(timer);
+            resolve(result);
+          }, (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+        });
+      }
+
+      function request(method, params) {
+        const id = nextRequestId++;
+        const response = new Promise((resolve, reject) => {
+          pendingRequests.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        });
+        return withTimeout(response, method === 'tools/call'
+          ? SAVE_TIMEOUT_MESSAGE
+          : 'This host did not connect the access card. Reopen the card in a host that supports MCP Apps.')
+          .finally(() => pendingRequests.delete(id));
+      }
+
+      function notify(method, params) {
+        window.parent.postMessage({ jsonrpc: '2.0', method, ...(params === undefined ? {} : { params }) }, '*');
+      }
+
+      function reportSize() {
+        if (!connected || !document.body) return;
+        const height = Math.ceil(document.body.getBoundingClientRect().height);
+        if (height > 0 && height !== lastHeight) {
+          lastHeight = height;
+          notify('ui/notifications/size-changed', { height });
+        }
+      }
+
+      function applyHostContext(context) {
+        const theme = context && context.theme;
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.dataset.theme = theme;
+        }
+      }
+
+      function extractProposalId(value, depth) {
+        if (!value || typeof value !== 'object' || depth > 8) return undefined;
+        const namespaced = value['mailbridge/accessProposal'];
+        if (namespaced && typeof namespaced.proposalId === 'string') return namespaced.proposalId;
+        for (const child of Object.values(value)) {
+          const found = extractProposalId(child, depth + 1);
+          if (found) return found;
+        }
+        return undefined;
+      }
+
+      function resultEnvelope(result) {
+        return result && (result.structuredContent || result.structured_content || result);
+      }
+
+      function normalizeStructured(result) {
+        const structured = resultEnvelope(result);
+        return structured && structured.ok === true ? structured.data : undefined;
+      }
+
+      function addNotice(kind, text) {
+        const notice = document.createElement('div');
+        notice.className = 'notice' + (kind === 'warning' ? ' warning' : '');
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('fill', 'none');
+        icon.setAttribute('stroke', 'currentColor');
+        icon.setAttribute('stroke-width', '1.8');
+        icon.setAttribute('stroke-linecap', 'round');
+        icon.setAttribute('stroke-linejoin', 'round');
+        icon.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', kind === 'warning'
+          ? 'M12 3.5 21 19H3L12 3.5Zm0 5.2v4.9m0 3.1v.1'
+          : 'M12 8v4.8m0 3.2v.1M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z');
+        icon.appendChild(path);
+        const copy = document.createElement('span');
+        copy.textContent = text;
+        notice.append(icon, copy);
+        byId('notices').appendChild(notice);
+      }
+
+      function renderProposal(next) {
+        if (!next || !modeCopy[next.proposedMode] || !Array.isArray(next.proposedAllowedAccounts)) return;
+        proposal = next;
+        const copy = modeCopy[next.proposedMode];
+        const accounts = byId('accounts');
+        accounts.replaceChildren();
+        for (const address of next.proposedAllowedAccounts) {
+          const chip = document.createElement('span');
+          chip.className = 'account-chip';
+          chip.textContent = String(address);
+          accounts.appendChild(chip);
+        }
+        byId('mode-name').textContent = copy.name;
+        byId('mode-detail').textContent = copy.detail;
+
+        const ledger = byId('permission-ledger');
+        ledger.replaceChildren();
+        for (const item of copy.capabilities) {
+          const cell = document.createElement('div');
+          cell.className = 'permission ' + item[1];
+          const state = document.createElement('span');
+          state.className = 'permission-state';
+          state.textContent = item[2];
+          const title = document.createElement('span');
+          title.className = 'permission-title';
+          title.textContent = item[0];
+          cell.append(state, title);
+          ledger.appendChild(cell);
+        }
+
+        const notices = byId('notices');
+        notices.replaceChildren();
+        addNotice('info', 'This replaces the complete saved account list and takes effect after Mailbridge reconnects.');
+        if (next.verification && next.verification.performed === true && next.verification.unmatchedAccounts.length > 0) {
+          addNotice('warning', 'Not found in the running Mail.app scope: ' + next.verification.unmatchedAccounts.join(', ') + '.');
+        } else if (next.verification && next.verification.performed === false) {
+          addNotice('warning', 'Mailbridge could not verify these addresses against Mail.app. Review them carefully before saving.');
+        }
+        if (next.savedPreferencesDiagnostic) {
+          addNotice('warning', 'The existing saved settings are unreadable. Saving will replace them.');
+        }
+        if (next.shadowedByEnvironment && next.shadowedByEnvironment.mode) {
+          addNotice('warning', 'A launch setting currently overrides the saved permission level. The saved level stays inactive until that override is removed.');
+        }
+        if (next.shadowedByEnvironment && next.shadowedByEnvironment.allowedAccounts) {
+          addNotice('warning', 'A launch setting currently overrides the saved account list. The saved list stays inactive until that override is removed.');
+        }
+        updateReadyState();
+      }
+
+      function updateReadyState() {
+        const canCall = connected || (window.openai && typeof window.openai.callTool === 'function');
+        saveButton.disabled = settled || saving || !(proposal && proposalId && canCall);
+        if (settled || saving) return;
+        if (proposal && !proposalId) {
+          saveLabel.textContent = 'Securing card…';
+        } else if (proposal && !canCall) {
+          saveLabel.textContent = 'Connecting…';
+        } else {
+          saveLabel.textContent = 'Save access';
+        }
+      }
+
+      function consumeToolResult(result) {
+        if (settled || saving || (proposal && proposalId)) return;
+        const nextProposal = normalizeStructured(result);
+        const nextProposalId = extractProposalId(result, 0);
+        if (nextProposal) renderProposal(nextProposal);
+        if (nextProposalId) proposalId = nextProposalId;
+        updateReadyState();
+      }
+
+      function setFatal(message) {
+        fatal.hidden = false;
+        fatal.textContent = message;
+        srStatus.textContent = message;
+      }
+
+      function finish(state, title, subtitle) {
+        settled = true;
+        saveButton.disabled = true;
+        cancelButton.disabled = true;
+        saveButton.classList.remove('loading');
+        statusPill.className = 'status-pill ' + (state === 'saved' ? 'saved' : 'cancelled');
+        statusPill.textContent = state === 'saved' ? 'Saved locally' : state === 'closed' ? 'Closed' : 'Not saved';
+        byId('title').textContent = title;
+        byId('subtitle').textContent = subtitle;
+        byId('actions').hidden = true;
+        srStatus.textContent = title + '. ' + subtitle;
+      }
+
+      async function callCommit(id) {
+        if (connected) {
+          return request('tools/call', { name: COMMIT_TOOL, arguments: { proposalId: id } });
+        }
+        if (window.openai && typeof window.openai.callTool === 'function') {
+          return withTimeout(window.openai.callTool(COMMIT_TOOL, { proposalId: id }), SAVE_TIMEOUT_MESSAGE);
+        }
+        throw new Error('This host cannot call the secure save tool.');
+      }
+
+      saveButton.addEventListener('click', async () => {
+        if (!proposal || !proposalId || settled || saving || saveButton.disabled) return;
+        saving = true;
+        saveAttempted = true;
+        fatal.hidden = true;
+        saveButton.disabled = true;
+        cancelButton.disabled = true;
+        saveButton.classList.add('loading');
+        saveLabel.textContent = 'Saving…';
+        srStatus.textContent = 'Saving Mailbridge access preferences.';
+        try {
+          const result = await callCommit(proposalId);
+          const structured = resultEnvelope(result);
+          if (!result || result.isError || !structured || structured.ok !== true || !structured.data || structured.data.saved !== true) {
+            const message = structured && structured.error && structured.error.message;
+            throw new Error(message || 'Mailbridge could not save these access settings.');
+          }
+          finish('saved', 'Access saved', 'Reconnect Mailbridge when you want the new account scope and permission level to take effect.');
+        } catch (error) {
+          saving = false;
+          saveButton.classList.remove('loading');
+          saveLabel.textContent = 'Try again';
+          saveButton.disabled = false;
+          cancelButton.disabled = false;
+          setFatal(error instanceof Error ? error.message : 'Mailbridge could not save these access settings.');
+        }
+      });
+
+      cancelButton.addEventListener('click', () => {
+        if (settled || saving) return;
+        if (saveAttempted) {
+          finish('closed', 'Review closed', 'A save was attempted. Check saved access preferences to confirm the current settings.');
+          return;
+        }
+        finish('cancelled', 'No changes saved', 'The proposed account scope and permission level were discarded.');
+      });
+
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+        if (message.method === undefined && message.id !== undefined && pendingRequests.has(message.id)) {
+          const pending = pendingRequests.get(message.id);
+          pendingRequests.delete(message.id);
+          if (message.error) pending.reject(new Error(message.error.message || 'Host request failed.'));
+          else pending.resolve(message.result);
+          return;
+        }
+        if (message.method === 'ui/notifications/tool-result') {
+          consumeToolResult(message.params && message.params.result ? message.params.result : message.params);
+        }
+        if (message.method === 'ui/notifications/host-context-changed') {
+          applyHostContext(message.params);
+        }
+      }, { passive: true });
+
+      function consumeOpenAiGlobals(globals) {
+        if (!globals) return;
+        applyHostContext(globals);
+        if (settled || saving || (proposal && proposalId)) return;
+        const next = normalizeStructured(globals.toolOutput);
+        if (next) renderProposal(next);
+        if (globals.toolResponseMetadata) {
+          const nextId = extractProposalId(globals.toolResponseMetadata, 0);
+          if (nextId) proposalId = nextId;
+        }
+        updateReadyState();
+      }
+
+      window.addEventListener('openai:set_globals', (event) => {
+        consumeOpenAiGlobals(event.detail && event.detail.globals);
+      }, { passive: true });
+      consumeOpenAiGlobals(window.openai);
+
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(reportSize).observe(document.body);
+      }
+
+      request('ui/initialize', {
+        appCapabilities: {},
+        appInfo: { name: 'Mailbridge access', version: '1.0.0' },
+        protocolVersion: PROTOCOL_VERSION
+      }).then((result) => {
+        connected = Boolean(result && result.hostCapabilities && result.hostCapabilities.serverTools);
+        applyHostContext(result && result.hostContext);
+        notify('ui/notifications/initialized');
+        if (!connected && !(window.openai && typeof window.openai.callTool === 'function')) {
+          setFatal('This host cannot call the secure save tool. Reopen this card in a host that supports app tool calls.');
+        }
+        updateReadyState();
+        reportSize();
+      }).catch((error) => {
+        connected = false;
+        if (!settled && !(window.openai && typeof window.openai.callTool === 'function')) {
+          setFatal(error.message);
+        }
+        updateReadyState();
+      });
+    })();
+  </script>
+</body>
+</html>`;
 
 // src/server/tool-definitions.ts
 var ALL_MODES = MAILBRIDGE_MODES;
@@ -32792,6 +33985,18 @@ var WRITE_IDEMPOTENT_ANNOTATIONS = Object.freeze({
   idempotentHint: true,
   openWorldHint: false
 });
+var PREFERENCES_ANNOTATIONS = Object.freeze({
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false
+});
+var PREFERENCES_REVIEW_ANNOTATIONS = Object.freeze({
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false
+});
 var DRAFT_ANNOTATIONS = Object.freeze({
   readOnlyHint: false,
   destructiveHint: false,
@@ -32806,6 +34011,30 @@ var SEND_ANNOTATIONS = Object.freeze({
 });
 var REQUIRES_USER_INTERACTION_META = Object.freeze({
   "anthropic/requiresUserInteraction": true
+});
+var ACCESS_PREFERENCES_FORM_OPTIONS = Object.freeze({
+  title: "Save Access Preferences",
+  description: "Review and save one exact Mailbridge mode and complete account allowlist through a native confirmation form. Call directly after the user selects the values; do not ask for duplicate chat confirmation. Only an accepted exact-scope form saves anything. Cannot configure direct send mode or its environment allowlist. Saved settings apply after reconnecting; explicit environment variables always win.",
+  annotations: PREFERENCES_ANNOTATIONS,
+  _meta: REQUIRES_USER_INTERACTION_META
+});
+var ACCESS_PREFERENCES_UI_URI = "ui://mailbridge/access-preferences-v1.html";
+var ACCESS_PREFERENCES_REVIEW_META = Object.freeze({
+  ui: {
+    resourceUri: ACCESS_PREFERENCES_UI_URI,
+    visibility: ["model", "app"]
+  },
+  "openai/outputTemplate": ACCESS_PREFERENCES_UI_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Preparing access card\u2026",
+  "openai/toolInvocation/invoked": "Access card ready"
+});
+var ACCESS_PREFERENCES_COMMIT_META = Object.freeze({
+  ui: { visibility: ["app"] },
+  "openai/visibility": "private",
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Saving access\u2026",
+  "openai/toolInvocation/invoked": "Access saved"
 });
 var TOOL_DEFINITIONS = [
   {
@@ -32891,7 +34120,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_send_message",
     title: "Send Mail Message",
-    description: "Send one new attachment-free message through Apple Mail. Prompted mode requires a fresh client confirmation for the exact outbound content; direct send mode requires mode and account allowlist environment variables. Both require confirmed=true after user approval. Success means Mail accepted the message for sending, not that the recipient received it.",
+    description: "Send one new attachment-free message through Apple Mail. In prompted mode, call immediately after resolving the user's exact send fields with confirmed=true; Mailbridge's native exact-content dialog is the sole final approval, so do not ask for duplicate chat approval. In direct send mode, an explicit account allowlist and exact chat approval are required before confirmed=true. Success means Mail accepted the message for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_message,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -32900,7 +34129,7 @@ var TOOL_DEFINITIONS = [
   {
     name: "mail_send_reply",
     title: "Send Mail Reply",
-    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve exactly the user-approved expected To/CC/BCC recipients, and the outgoing body is replaced with exactly the approved body. The review shows the source subject as Reply to because Mail generates the outgoing reply subject. Prompted mode requires a fresh client confirmation; direct send mode requires mode and account allowlist environment variables. Success means Mail accepted the reply for sending, not that the recipient received it.",
+    description: "Send one attachment-free reply or reply-all for a selected Apple Mail message. Mail must resolve the expected To/CC/BCC recipients exactly, and the outgoing body is replaced with the reviewed body. In prompted mode, call immediately after resolving the exact fields with confirmed=true; Mailbridge's native exact-content dialog is the sole final approval, so do not ask for duplicate chat approval. Direct send mode requires an explicit account allowlist and exact chat approval first. Success means Mail accepted the reply for sending, not that the recipient received it.",
     inputSchema: inputSchemas.mail_send_reply,
     annotations: SEND_ANNOTATIONS,
     allowedModes: SEND_MODES,
@@ -32924,24 +34153,62 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "mailbridge_set_access_preferences",
-    title: "Set Access Preferences",
-    description: "Save mode and account allowlist preferences locally for future Mailbridge sessions, so the user isn't asked again next time. Available in every mode, including read-only, since bootstrapping permissions from scratch is its purpose. Cannot configure direct send mode or the effective allowlist used by that mode: both require manual environment-variable changes by the user, since a model-supplied confirmed:true is not an independently verified human confirmation. Does not change the currently running server; the change takes effect the next time this MCP server restarts or reconnects. An explicitly set environment variable always overrides the saved value for that field.",
+    title: "Review Access Preferences",
+    description: "Open Mailbridge's inline access card for one exact mode and complete account allowlist. Call this directly after the user selects the values; do not ask for a duplicate chat confirmation. This tool only prepares the review card and never saves by itself. The user must press Save access inside the card, which invokes an app-only commit tool hidden from the model. Available in every mode, including read-only. Cannot set direct send mode; that remains a manual environment-variable change. Saved settings apply after reconnecting, and explicitly set environment variables always win.",
     inputSchema: inputSchemas.mailbridge_set_access_preferences,
-    annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
+    annotations: PREFERENCES_REVIEW_ANNOTATIONS,
     allowedModes: ALL_MODES,
-    _meta: REQUIRES_USER_INTERACTION_META
+    _meta: ACCESS_PREFERENCES_REVIEW_META
+  },
+  {
+    name: "mailbridge_commit_access_preferences",
+    title: "Save Access Preferences",
+    description: "App-only finalizer for the Mailbridge access card. It accepts only a short-lived opaque proposal prepared by mailbridge_set_access_preferences and saves that exact mode/account replacement. Never call this from chat or expose its proposal identifier.",
+    inputSchema: inputSchemas.mailbridge_commit_access_preferences,
+    annotations: PREFERENCES_ANNOTATIONS,
+    allowedModes: ALL_MODES,
+    _meta: ACCESS_PREFERENCES_COMMIT_META
   }
 ];
 
 // src/server/index.ts
 var SERVER_INFO = Object.freeze({
   name: "mailbridge-mcp",
-  version: "0.5.0"
+  version: "0.6.0"
 });
+var UI_EXTENSION = "io.modelcontextprotocol/ui";
+var UI_MIME_TYPE = "text/html;profile=mcp-app";
+function preferencesConfirmationMessage(proposal) {
+  const quote = (value) => JSON.stringify(value).replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
+    (character) => `\\u{${character.codePointAt(0)?.toString(16).padStart(4, "0")}}`
+  );
+  const fields = [
+    "Save these Mailbridge access preferences?",
+    `Mode: ${proposal.proposedMode}`,
+    `Accounts (complete replacement): ${quote(proposal.proposedAllowedAccounts)}`,
+    "Read mail: yes",
+    `Create drafts: ${proposal.proposedMode !== "read-only" ? "yes" : "no"}`,
+    `Change read/flag state: ${["full", "prompted"].includes(proposal.proposedMode) ? "yes" : "no"}`,
+    `Send mail: ${proposal.proposedMode === "prompted" ? "separate approval for every send" : "no"}`,
+    "Applies after restarting or reconnecting Mailbridge."
+  ];
+  if (proposal.shadowedByEnvironment.mode) fields.push("The launch mode overrides this saved mode until removed.");
+  if (proposal.shadowedByEnvironment.allowedAccounts) fields.push("The launch account list overrides this saved list until removed.");
+  if (!proposal.verification.performed) fields.push("These addresses could not be verified against Mail.app.");
+  else if (proposal.verification.unmatchedAccounts.length > 0) {
+    fields.push(`Not found in the running account scope: ${quote(proposal.verification.unmatchedAccounts)}`);
+  }
+  if (proposal.savedPreferencesDiagnostic) fields.push("Existing saved settings are unreadable and will be replaced.");
+  fields.push("Continue saves exactly these settings. Skip cancels.");
+  return fields.join("  \u2022  ");
+}
 function createMailbridgeServer(bridge, config2, options) {
   const server = new McpServer(SERVER_INFO, {
     capabilities: {
-      tools: {}
+      tools: {},
+      resources: {},
+      extensions: { [UI_EXTENSION]: {} }
     }
   });
   const service = new MailbridgeToolService(
@@ -32951,24 +34218,36 @@ function createMailbridgeServer(bridge, config2, options) {
       const result = await server.server.elicitInput({
         mode: "form",
         message: outboundPreviewMessage(confirmation),
-        requestedSchema: {
-          type: "object",
-          properties: {
-            approve: {
-              type: "boolean",
-              title: confirmation.kind === "message" ? "Send" : "Send reply",
-              description: confirmation.kind === "message" ? "Sends this exact message through Mail. You can't undo it." : "Sends this reply through Mail with the sender, recipients, and message shown. Mail generates the reply subject. You can't undo it."
-            }
-          },
-          required: ["approve"]
-        }
+        requestedSchema: { type: "object", properties: {} }
       });
-      return result.action === "accept" && result.content?.approve === true;
+      return result.action === "accept";
     },
     options?.localPreferencesContext
   );
-  for (const definition of TOOL_DEFINITIONS) {
-    if (!definition.allowedModes.includes(config2.mode)) continue;
+  server.registerResource(
+    "mailbridge-access-preferences",
+    ACCESS_PREFERENCES_UI_URI,
+    { mimeType: UI_MIME_TYPE },
+    () => Promise.resolve({
+      contents: [
+        {
+          uri: ACCESS_PREFERENCES_UI_URI,
+          mimeType: UI_MIME_TYPE,
+          text: ACCESS_PREFERENCES_UI_HTML,
+          _meta: {
+            ui: {
+              prefersBorder: false,
+              csp: { connectDomains: [], resourceDomains: [] }
+            }
+          }
+        }
+      ]
+    })
+  );
+  const registerTool = (definition, supportsApps) => {
+    if (!definition.allowedModes.includes(config2.mode)) return;
+    if (definition.name === "mailbridge_commit_access_preferences" && !supportsApps) return;
+    const nativePreferences = definition.name === "mailbridge_set_access_preferences" && !supportsApps;
     server.registerTool(
       definition.name,
       {
@@ -32977,11 +34256,30 @@ function createMailbridgeServer(bridge, config2, options) {
         inputSchema: definition.inputSchema,
         outputSchema: toolOutputSchema,
         annotations: definition.annotations,
-        ...definition._meta === void 0 ? {} : { _meta: definition._meta }
+        ...definition._meta === void 0 ? {} : { _meta: definition._meta },
+        ...nativePreferences ? ACCESS_PREFERENCES_FORM_OPTIONS : {}
       },
-      async (input) => service.invoke(definition.name, input)
+      async (input) => {
+        if (!nativePreferences) return service.invoke(definition.name, input);
+        const capabilities = server.server.getClientCapabilities();
+        return service.invokeAccessPreferencesWithConfirmation(input, capabilities?.elicitation === void 0 ? void 0 : async (proposal) => {
+          const result = await server.server.elicitInput({
+            mode: "form",
+            message: preferencesConfirmationMessage(proposal),
+            requestedSchema: { type: "object", properties: {} }
+          });
+          return result.action === "accept";
+        });
+      }
     );
-  }
+  };
+  const [firstTool, ...remainingTools] = TOOL_DEFINITIONS;
+  if (firstTool !== void 0) registerTool(firstTool, false);
+  server.server.oninitialized = () => {
+    const ui = server.server.getClientCapabilities()?.extensions?.[UI_EXTENSION];
+    const supportsApps = typeof ui === "object" && ui !== null && "mimeTypes" in ui && Array.isArray(ui.mimeTypes) && ui.mimeTypes.includes(UI_MIME_TYPE);
+    for (const definition of remainingTools) registerTool(definition, supportsApps);
+  };
   return server;
 }
 
