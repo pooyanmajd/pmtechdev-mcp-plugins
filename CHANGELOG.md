@@ -4,6 +4,10 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-09
+
+- Mailbridge allows five minutes for native send and access reviews, distinguishes expired reviews from unsupported clients, and reports the running server version for deployment verification.
+
 ## [0.6.0] - 2026-09-09
 
 - Mailbridge gains reliable inline access review, native confirmation fallback, bounded save requests, immutable review proposals, and patched dependencies. Existing 0.5.0 account-scoping and direct-send safeguards remain in place.

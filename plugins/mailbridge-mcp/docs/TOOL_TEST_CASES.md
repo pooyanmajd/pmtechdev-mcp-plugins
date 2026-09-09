@@ -124,3 +124,11 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 ## Release evidence
 
 Record the commit SHA, Node 22 and 24 versions, macOS runner version, `npm ci`, `npm run check`, coverage threshold result, packaged-plugin initialization and `tools/list` smoke result, plugin validator result, and skill/agent metadata validator result. Do not attach real email content, account IDs, Mail logs, or screenshots of private mailboxes to a public submission.
+
+## Native review timing
+
+**Given:** a prompted new-message or reply send, or a native access preference review.
+
+**When:** the user accepts after 107 seconds.
+
+**Expected:** the exact reviewed operation succeeds once. If acceptance arrives after the five-minute deadline, return `CONFIRMATION_TIMEOUT` and perform no mutation, including after the late response. The dialog states the deadline.

@@ -23454,6 +23454,7 @@ var MAILBRIDGE_ERROR_CODES = [
   "AMBIGUOUS_ID",
   "READ_ONLY",
   "CONFIRMATION_UNAVAILABLE",
+  "CONFIRMATION_TIMEOUT",
   "SEND_NOT_CONFIRMED",
   "PREFERENCES_NOT_CONFIRMED",
   "PREFERENCES_PROPOSAL_EXPIRED",
@@ -23481,7 +23482,8 @@ var SAFE_ERROR_MESSAGES = Object.freeze({
   NOT_FOUND: "The requested Mail item was not found or is not accessible.",
   AMBIGUOUS_ID: "The supplied identifier matches more than one Mail item.",
   READ_ONLY: "This operation is disabled by the current Mailbridge mode.",
-  CONFIRMATION_UNAVAILABLE: "The MCP client cannot present the required inline confirmation.",
+  CONFIRMATION_UNAVAILABLE: "The MCP client could not complete the required confirmation.",
+  CONFIRMATION_TIMEOUT: "The confirmation expired before approval reached Mailbridge. Nothing was sent or saved. Open a fresh review to try again.",
   SEND_NOT_CONFIRMED: "No explicit approval was received for this send; no message was submitted.",
   PREFERENCES_NOT_CONFIRMED: "No explicit approval was received; no access preferences were saved.",
   PREFERENCES_PROPOSAL_EXPIRED: "This access proposal expired or was replaced. Open a fresh Mailbridge access card.",
@@ -32727,6 +32729,14 @@ var inputSchemas = {
 
 // src/server/service.ts
 import { randomUUID as randomUUID2 } from "crypto";
+
+// src/server/version.ts
+var SERVER_INFO = Object.freeze({
+  name: "mailbridge-mcp",
+  version: "0.6.1"
+});
+
+// src/server/service.ts
 var MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 var MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
 var MAX_ACCESS_PROPOSALS = 6;
@@ -32760,6 +32770,10 @@ function parseInput(schema, input) {
     throw new MailbridgeError("INVALID_INPUT");
   }
   return parsed.data;
+}
+function confirmationFailure(error51) {
+  if (error51 instanceof MailbridgeError && error51.code === "CONFIRMATION_BUSY") return error51;
+  return new MailbridgeError(error51 instanceof McpError && error51.code === Number(ErrorCode.RequestTimeout) ? "CONFIRMATION_TIMEOUT" : "CONFIRMATION_UNAVAILABLE");
 }
 var MailbridgeToolService = class {
   constructor(bridge, config2, confirmMailSend, localPreferences = defaultLocalPreferencesContext()) {
@@ -32805,8 +32819,7 @@ var MailbridgeToolService = class {
           () => new MailbridgeError("CONFIRMATION_BUSY")
         );
       } catch (error51) {
-        if (error51 instanceof MailbridgeError && error51.code === "CONFIRMATION_BUSY") throw error51;
-        throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+        throw confirmationFailure(error51);
       }
       if (!approved) throw new MailbridgeError("PREFERENCES_NOT_CONFIRMED");
       return success2(await this.commitAccessPreferences({ proposalId }));
@@ -32853,10 +32866,7 @@ var MailbridgeToolService = class {
         () => new MailbridgeError("CONFIRMATION_BUSY")
       );
     } catch (error51) {
-      if (error51 instanceof MailbridgeError && error51.code === "CONFIRMATION_BUSY") {
-        throw error51;
-      }
-      throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      throw confirmationFailure(error51);
     }
     if (!approved) {
       throw new MailbridgeError("SEND_NOT_CONFIRMED");
@@ -33132,6 +33142,7 @@ var MailbridgeToolService = class {
         parseInput(mailbridgeGetAccessPreferencesInputSchema, rawInput);
         const { preferences, diagnostic } = await readLocalPreferences(this.localPreferences.path);
         const result = {
+          serverVersion: SERVER_INFO.version,
           found: preferences !== void 0,
           path: this.localPreferences.path,
           ...preferences === void 0 ? {} : {
@@ -34172,12 +34183,10 @@ var TOOL_DEFINITIONS = [
 ];
 
 // src/server/index.ts
-var SERVER_INFO = Object.freeze({
-  name: "mailbridge-mcp",
-  version: "0.6.0"
-});
 var UI_EXTENSION = "io.modelcontextprotocol/ui";
 var UI_MIME_TYPE = "text/html;profile=mcp-app";
+var HUMAN_REVIEW_TIMEOUT_MS = 5 * 60 * 1e3;
+var REVIEW_DEADLINE_MESSAGE = "This review expires after 5 minutes.";
 function preferencesConfirmationMessage(proposal) {
   const quote = (value) => JSON.stringify(value).replace(
     /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu,
@@ -34201,6 +34210,7 @@ function preferencesConfirmationMessage(proposal) {
   }
   if (proposal.savedPreferencesDiagnostic) fields.push("Existing saved settings are unreadable and will be replaced.");
   fields.push("Continue saves exactly these settings. Skip cancels.");
+  fields.push(REVIEW_DEADLINE_MESSAGE);
   return fields.join("  \u2022  ");
 }
 function createMailbridgeServer(bridge, config2, options) {
@@ -34217,9 +34227,9 @@ function createMailbridgeServer(bridge, config2, options) {
     async (confirmation) => {
       const result = await server.server.elicitInput({
         mode: "form",
-        message: outboundPreviewMessage(confirmation),
+        message: `${outboundPreviewMessage(confirmation)}\u2028\u2028${REVIEW_DEADLINE_MESSAGE}`,
         requestedSchema: { type: "object", properties: {} }
-      });
+      }, { timeout: HUMAN_REVIEW_TIMEOUT_MS });
       return result.action === "accept";
     },
     options?.localPreferencesContext
@@ -34267,7 +34277,7 @@ function createMailbridgeServer(bridge, config2, options) {
             mode: "form",
             message: preferencesConfirmationMessage(proposal),
             requestedSchema: { type: "object", properties: {} }
-          });
+          }, { timeout: HUMAN_REVIEW_TIMEOUT_MS });
           return result.action === "accept";
         });
       }

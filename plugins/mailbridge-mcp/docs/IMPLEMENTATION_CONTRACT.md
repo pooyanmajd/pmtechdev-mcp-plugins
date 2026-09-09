@@ -71,7 +71,7 @@ Explicitly out of scope: sending edited drafts, forwards, attachments, or batche
 
 ## Error model
 
-Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `ACCOUNT_SCOPE_REQUIRED`, `CONFIRMATION_UNAVAILABLE`, `SEND_NOT_CONFIRMED`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
+Return stable typed error codes such as `UNSUPPORTED_PLATFORM`, `AUTOMATION_DENIED`, `MAIL_NOT_CONFIGURED`, `NOT_FOUND`, `AMBIGUOUS_ID`, `READ_ONLY`, `ACCOUNT_SCOPE_REQUIRED`, `CONFIRMATION_UNAVAILABLE`, `CONFIRMATION_TIMEOUT`, `SEND_NOT_CONFIRMED`, `AUTOMATION_BUSY`, `MUTATION_OUTCOME_UNKNOWN`, `SEND_REJECTED`, `SEND_CONTENT_CHANGED`, `SEND_TARGET_CHANGED`, `TIMEOUT`, and `MAIL_AUTOMATION_ERROR`. Do not leak raw scripts, environment variables, credentials, or stack traces to tool callers.
 
 ## Packaging
 

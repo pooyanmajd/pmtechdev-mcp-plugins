@@ -13,6 +13,7 @@ const codexPlugin = readJson(".codex-plugin/plugin.json");
 const claudePlugin = readJson(".claude-plugin/plugin.json");
 const grokPlugin = readJson(".grok-plugin/plugin.json");
 const serverSource = readFileSync(resolve(root, "src/server/index.ts"), "utf8");
+const serverVersionSource = readFileSync(resolve(root, "src/server/version.ts"), "utf8");
 
 if (packageJson.name !== codexPlugin.name || packageJson.name !== claudePlugin.name || packageJson.name !== grokPlugin.name) {
   fail("package and plugin names differ");
@@ -24,7 +25,7 @@ if (
 ) {
   fail("package and plugin versions differ");
 }
-if (!serverSource.includes(`version: "${packageJson.version}"`)) {
+if (!serverVersionSource.includes(`version: "${packageJson.version}"`)) {
   fail("MCP server version differs from package version");
 }
 

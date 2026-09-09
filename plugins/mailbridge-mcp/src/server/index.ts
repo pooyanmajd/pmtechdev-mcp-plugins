@@ -8,18 +8,20 @@ import { toolOutputSchema } from "./schemas.js";
 import { MailbridgeToolService, type AccessPreferencesProposal } from "./service.js";
 import { ACCESS_PREFERENCES_UI_HTML } from "./access-preferences-ui.js";
 import { ACCESS_PREFERENCES_FORM_OPTIONS, ACCESS_PREFERENCES_UI_URI, TOOL_DEFINITIONS, type ToolDefinition } from "./tool-definitions.js";
+import { SERVER_INFO } from "./version.js";
 
 export interface CreateMailbridgeServerOptions {
   readonly localPreferencesContext?: LocalPreferencesContext;
 }
 
-export const SERVER_INFO = Object.freeze({
-  name: "mailbridge-mcp",
-  version: "0.6.0",
-});
+export { SERVER_INFO } from "./version.js";
 
 const UI_EXTENSION = "io.modelcontextprotocol/ui";
 const UI_MIME_TYPE = "text/html;profile=mcp-app";
+// Human review needs longer than the SDK's 60-second network-request default.
+// Keep a fixed deadline: a late response must never revive an expired send.
+const HUMAN_REVIEW_TIMEOUT_MS = 5 * 60 * 1_000;
+const REVIEW_DEADLINE_MESSAGE = "This review expires after 5 minutes.";
 
 function preferencesConfirmationMessage(proposal: AccessPreferencesProposal): string {
   const quote = (value: unknown): string => JSON.stringify(value).replace(
@@ -44,6 +46,7 @@ function preferencesConfirmationMessage(proposal: AccessPreferencesProposal): st
   }
   if (proposal.savedPreferencesDiagnostic) fields.push("Existing saved settings are unreadable and will be replaced.");
   fields.push("Continue saves exactly these settings. Skip cancels.");
+  fields.push(REVIEW_DEADLINE_MESSAGE);
   return fields.join("  •  ");
 }
 
@@ -65,9 +68,9 @@ export function createMailbridgeServer(
     async (confirmation) => {
       const result = await server.server.elicitInput({
         mode: "form",
-        message: outboundPreviewMessage(confirmation),
+        message: `${outboundPreviewMessage(confirmation)}\u2028\u2028${REVIEW_DEADLINE_MESSAGE}`,
         requestedSchema: { type: "object", properties: {} },
-      });
+      }, { timeout: HUMAN_REVIEW_TIMEOUT_MS });
       return result.action === "accept";
     },
     options?.localPreferencesContext,
@@ -119,7 +122,7 @@ export function createMailbridgeServer(
               mode: "form",
               message: preferencesConfirmationMessage(proposal),
               requestedSchema: { type: "object", properties: {} },
-            });
+            }, { timeout: HUMAN_REVIEW_TIMEOUT_MS });
             return result.action === "accept";
           });
       },

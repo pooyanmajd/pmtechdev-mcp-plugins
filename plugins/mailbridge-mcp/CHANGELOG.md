@@ -4,6 +4,18 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-09
+
+### Fixed
+
+- Native send and access reviews now have an explicit five-minute deadline instead of the MCP SDK's 60-second network timeout. An approval after more than a minute remains valid until that deadline.
+- Expired reviews return `CONFIRMATION_TIMEOUT` rather than claiming the client cannot display a dialog. Late acceptance never sends or saves, and no automatic retry occurs.
+- Added delayed-approval and late-response regression tests for new messages, replies, and native access preferences.
+
+### Added
+
+- `mailbridge_get_access_preferences` reports `serverVersion` so an installed update can be distinguished from an older running process.
+
 ## [0.6.0] - 2026-09-09
 
 ### Added
