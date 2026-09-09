@@ -35,15 +35,15 @@
     "create:plugin": "node scripts/create-plugin.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.2",
-    "@types/node": "24.10.1",
-    "@vitest/coverage-v8": "4.1.11",
-    "eslint": "9.39.2",
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "eslint": "10.10.0",
     "tsup": "8.5.1",
-    "tsx": "4.21.0",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.64.0",
-    "vitest": "4.1.11",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
     "yaml": "^2.9.0"
   }
 }
