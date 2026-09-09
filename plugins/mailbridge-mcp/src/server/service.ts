@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { BoundedSerialQueue } from "@pmtechdev/mcp-kit";
@@ -22,6 +24,7 @@ import {
   listAccountsInputSchema,
   listMailboxesInputSchema,
   mailbridgeGetAccessPreferencesInputSchema,
+  mailbridgeCommitAccessPreferencesInputSchema,
   mailbridgeSetAccessPreferencesInputSchema,
   previewOutboundInputSchema,
   searchMessagesInputSchema,
@@ -34,14 +37,36 @@ import {
 type StructuredJson = Record<string, unknown>;
 const MAX_CONCURRENT_OR_QUEUED_AUTOMATIONS = 2;
 const MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS = 2;
+const MAX_ACCESS_PROPOSALS = 6;
+const ACCESS_PROPOSAL_TTL_MS = 10 * 60 * 1_000;
 
 export type MailSendConfirmation = OutboundPreview;
 
 export type ConfirmMailSend = (confirmation: MailSendConfirmation) => Promise<boolean>;
 
-type AccessPreferencesVerification =
+export type AccessPreferencesVerification =
   | { readonly performed: true; readonly matchedAccounts: readonly string[]; readonly unmatchedAccounts: readonly string[] }
   | { readonly performed: false; readonly reason: string };
+
+export interface AccessPreferencesProposal {
+  readonly status: "awaiting-user";
+  readonly activeMode: MailbridgeConfig["mode"];
+  readonly activeAllowedAccounts: readonly string[] | undefined;
+  readonly savedMode: MailbridgeConfig["mode"] | undefined;
+  readonly savedAllowedAccounts: readonly string[] | undefined;
+  readonly savedPreferencesDiagnostic: string | undefined;
+  readonly proposedMode: Exclude<MailbridgeConfig["mode"], "send">;
+  readonly proposedAllowedAccounts: readonly string[];
+  readonly verification: AccessPreferencesVerification;
+  readonly shadowedByEnvironment: LocalPreferencesContext["envOverrides"];
+}
+
+interface PendingAccessPreferencesProposal {
+  readonly id: string;
+  readonly createdAtMs: number;
+  readonly proposal: AccessPreferencesProposal;
+  committedResult?: SetAccessPreferencesResult;
+}
 
 interface GetAccessPreferencesResult {
   readonly found: boolean;
@@ -66,11 +91,12 @@ interface SetAccessPreferencesResult {
   readonly shadowedByEnvironment: LocalPreferencesContext["envOverrides"];
 }
 
-function success(data: unknown): CallToolResult {
+function success(data: unknown, meta?: Record<string, unknown>): CallToolResult {
   const structuredContent: StructuredJson = { ok: true, data };
   return {
     content: [{ type: "text", text: JSON.stringify(structuredContent) }],
     structuredContent,
+    ...(meta === undefined ? {} : { _meta: meta }),
   };
 }
 
@@ -105,6 +131,8 @@ export class MailbridgeToolService {
   // (which can each wait minutes on a human) independently of Mail.app/JXA calls,
   // so neither can starve the other.
   private readonly confirmationQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
+  private readonly preferencesQueue = new BoundedSerialQueue(MAX_CONCURRENT_OR_QUEUED_CONFIRMATIONS);
+  private readonly accessProposals = new Map<string, PendingAccessPreferencesProposal>();
 
   public constructor(
     private readonly bridge: MailBridge,
@@ -115,6 +143,12 @@ export class MailbridgeToolService {
 
   public async invoke(name: ToolName, rawInput: unknown): Promise<CallToolResult> {
     try {
+      if (name === "mailbridge_set_access_preferences") {
+        const prepared = await this.prepareAccessPreferences(rawInput);
+        return success(prepared.proposal, {
+          "mailbridge/accessProposal": { proposalId: prepared.proposalId },
+        });
+      }
       return success(await this.execute(name, rawInput));
     } catch (error: unknown) {
       return failure(error);
@@ -207,6 +241,107 @@ export class MailbridgeToolService {
         throw error;
       }
     });
+  }
+
+  private pruneAccessProposals(nowMs: number): void {
+    for (const [id, pending] of this.accessProposals) {
+      if (nowMs - pending.createdAtMs >= ACCESS_PROPOSAL_TTL_MS) {
+        this.accessProposals.delete(id);
+      }
+    }
+  }
+
+  private async prepareAccessPreferences(rawInput: unknown): Promise<{
+    readonly proposalId: string;
+    readonly proposal: AccessPreferencesProposal;
+  }> {
+    const input = parseInput(mailbridgeSetAccessPreferencesInputSchema, rawInput);
+    const proposedAccounts = [...new Set(input.allowedAccounts.map((account) => account.trim().toLowerCase()))];
+    const {
+      preferences: savedPreferences,
+      diagnostic: savedPreferencesDiagnostic,
+    } = await readLocalPreferences(this.localPreferences.path);
+
+    let verification: AccessPreferencesVerification;
+    try {
+      const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
+      const known = new Set(
+        accounts.flatMap((account) => account.emailAddresses.map((address) => address.toLowerCase())),
+      );
+      verification = {
+        performed: true,
+        matchedAccounts: proposedAccounts.filter((address) => known.has(address)),
+        unmatchedAccounts: proposedAccounts.filter((address) => !known.has(address)),
+      };
+    } catch {
+      verification = {
+        performed: false,
+        reason: "Could not verify the proposed addresses against live Mail.app accounts; the card will show this before saving.",
+      };
+    }
+
+    const proposal: AccessPreferencesProposal = {
+      status: "awaiting-user",
+      activeMode: this.config.mode,
+      activeAllowedAccounts: this.config.allowedAccounts,
+      savedMode: savedPreferences?.mode,
+      savedAllowedAccounts: savedPreferences?.allowedAccounts,
+      savedPreferencesDiagnostic,
+      proposedMode: input.mode,
+      proposedAllowedAccounts: proposedAccounts,
+      verification,
+      shadowedByEnvironment: this.localPreferences.envOverrides,
+    };
+    const proposalId = randomUUID();
+    const nowMs = Date.now();
+    this.pruneAccessProposals(nowMs);
+    // Make room only when inserting. A commit must not evict a valid proposal
+    // just because the store is currently at capacity.
+    while (this.accessProposals.size >= MAX_ACCESS_PROPOSALS) {
+      const oldestId = this.accessProposals.keys().next().value;
+      if (oldestId === undefined) break;
+      this.accessProposals.delete(oldestId);
+    }
+    this.accessProposals.set(proposalId, { id: proposalId, createdAtMs: nowMs, proposal });
+    return { proposalId, proposal };
+  }
+
+  private async commitAccessPreferences(rawInput: unknown): Promise<SetAccessPreferencesResult> {
+    const input = parseInput(mailbridgeCommitAccessPreferencesInputSchema, rawInput);
+    return this.preferencesQueue.run(async () => {
+      const nowMs = Date.now();
+      this.pruneAccessProposals(nowMs);
+      const pending = this.accessProposals.get(input.proposalId);
+      if (pending === undefined) {
+        throw new MailbridgeError("PREFERENCES_PROPOSAL_EXPIRED");
+      }
+      if (pending.committedResult !== undefined) {
+        return pending.committedResult;
+      }
+
+      let saved;
+      try {
+        saved = await writeLocalPreferences(this.localPreferences.path, {
+          mode: pending.proposal.proposedMode,
+          allowedAccounts: pending.proposal.proposedAllowedAccounts,
+        });
+      } catch {
+        throw new MailbridgeError("LOCAL_PREFERENCES_WRITE_FAILED");
+      }
+
+      const result: SetAccessPreferencesResult = {
+        saved: true,
+        path: this.localPreferences.path,
+        mode: saved.mode,
+        allowedAccounts: saved.allowedAccounts,
+        verification: pending.proposal.verification,
+        effectiveImmediately: false,
+        appliesAfter: "restart-or-reconnect",
+        shadowedByEnvironment: this.localPreferences.envOverrides,
+      };
+      pending.committedResult = result;
+      return result;
+    }, () => new MailbridgeError("CONFIRMATION_BUSY"));
   }
 
   private async execute(name: ToolName, rawInput: unknown): Promise<unknown> {
@@ -385,48 +520,13 @@ export class MailbridgeToolService {
         return result;
       }
       case "mailbridge_set_access_preferences": {
-        const input = parseInput(mailbridgeSetAccessPreferencesInputSchema, rawInput);
-        const proposed = new Set(input.allowedAccounts.map((account) => account.trim().toLowerCase()));
-
-        let verification: AccessPreferencesVerification;
-        try {
-          const accounts = await this.runAutomation(async () => this.bridge.listAccounts());
-          const known = new Set(
-            accounts.flatMap((account) => account.emailAddresses.map((address) => address.toLowerCase())),
-          );
-          verification = {
-            performed: true,
-            matchedAccounts: [...proposed].filter((address) => known.has(address)),
-            unmatchedAccounts: [...proposed].filter((address) => !known.has(address)),
-          };
-        } catch {
-          verification = {
-            performed: false,
-            reason: "Could not verify the proposed addresses against live Mail.app accounts; saved anyway.",
-          };
-        }
-
-        let saved;
-        try {
-          saved = await writeLocalPreferences(this.localPreferences.path, {
-            mode: input.mode,
-            allowedAccounts: input.allowedAccounts,
-          });
-        } catch {
-          throw new MailbridgeError("LOCAL_PREFERENCES_WRITE_FAILED");
-        }
-
-        const result: SetAccessPreferencesResult = {
-          saved: true,
-          path: this.localPreferences.path,
-          mode: saved.mode,
-          allowedAccounts: saved.allowedAccounts,
-          verification,
-          effectiveImmediately: false,
-          appliesAfter: "restart-or-reconnect",
-          shadowedByEnvironment: this.localPreferences.envOverrides,
-        };
-        return result;
+        // Handled in invoke() so the short-lived proposal identifier can be
+        // returned through result _meta, which is visible to the card but not
+        // to the model.
+        throw new MailbridgeError("INVALID_INPUT");
+      }
+      case "mailbridge_commit_access_preferences": {
+        return this.commitAccessPreferences(rawInput);
       }
     }
   }

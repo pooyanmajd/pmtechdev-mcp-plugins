@@ -1,9 +1,14 @@
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { MailbridgeConfig } from "../../src/config.js";
+import type { LocalPreferencesContext } from "../../src/local-config.js";
 import { createMailbridgeServer } from "../../src/server/index.js";
 import { TOOL_NAMES } from "../../src/server/schemas.js";
 import { createFakeBridge } from "./fake-bridge.js";
@@ -19,9 +24,11 @@ const config: MailbridgeConfig = {
 
 describe("MCP server", () => {
   const closeCallbacks: Array<() => Promise<void>> = [];
+  const tempDirs: string[] = [];
 
   afterEach(async () => {
     await Promise.all(closeCallbacks.splice(0).map(async (close) => close()));
+    await Promise.all(tempDirs.splice(0).map(async (dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
   async function connect(overrideConfig: MailbridgeConfig = config) {
@@ -65,20 +72,50 @@ describe("MCP server", () => {
       idempotentHint: false,
       openWorldHint: true,
     });
+    const setAccessPreferences = tools.find(({ name }) => name === "mailbridge_set_access_preferences");
+    expect(setAccessPreferences?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    const commitAccessPreferences = tools.find(({ name }) => name === "mailbridge_commit_access_preferences");
+    expect(commitAccessPreferences?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect((setAccessPreferences?.inputSchema as { required?: string[] }).required).toEqual([
+      "mode",
+      "allowedAccounts",
+    ]);
+    expect(setAccessPreferences?.description).toContain("do not ask for a duplicate chat confirmation");
+    expect(setAccessPreferences?._meta).toMatchObject({
+      ui: {
+        resourceUri: "ui://mailbridge/access-preferences-v1.html",
+        visibility: ["model", "app"],
+      },
+    });
+    expect(commitAccessPreferences?._meta).toMatchObject({
+      ui: { visibility: ["app"] },
+      "openai/visibility": "private",
+      "openai/widgetAccessible": true,
+    });
     expect(tools.some(({ name }) => name === "mail_send_draft")).toBe(false);
     expect(tools.every(({ description, inputSchema, outputSchema }) =>
       Boolean(description && inputSchema && outputSchema),
     )).toBe(true);
   });
 
-  it("marks exactly the send and preference-saving tools as requiring user interaction", async () => {
+  it("keeps send confirmations host-gated while the access card owns preference consent", async () => {
     const { client } = await connect({ ...config, mode: "send", allowedAccounts: ["sender@example.com"] });
     const { tools } = await client.listTools();
 
     const flagged = tools
       .filter((tool) => tool._meta?.["anthropic/requiresUserInteraction"] === true)
       .map(({ name }) => name);
-    expect(flagged).toEqual(["mail_send_message", "mail_send_reply", "mailbridge_set_access_preferences"]);
+    expect(flagged).toEqual(["mail_send_message", "mail_send_reply"]);
     expect(tools.find(({ name }) => name === "mail_send_message")?._meta).toEqual({
       "anthropic/requiresUserInteraction": true,
     });
@@ -99,6 +136,7 @@ describe("MCP server", () => {
       "mail_preview_outbound",
       "mailbridge_get_access_preferences",
       "mailbridge_set_access_preferences",
+      "mailbridge_commit_access_preferences",
     ];
     const draftTools = [...readOnlyTools, "mail_create_draft", "mail_create_reply_draft", "mail_create_forward_draft"];
     const fullTools = [...draftTools, "mail_set_message_state"];
@@ -122,6 +160,7 @@ describe("MCP server", () => {
       expect(new Set(registeredNames)).toEqual(new Set(expectedNames));
       expect(registeredNames).toContain("mailbridge_get_access_preferences");
       expect(registeredNames).toContain("mailbridge_set_access_preferences");
+      expect(registeredNames).toContain("mailbridge_commit_access_preferences");
     }
   });
 
@@ -146,10 +185,12 @@ describe("MCP server", () => {
       { capabilities: { elicitation: { form: {} } } },
     );
     let prompt = "";
+    let requestedSchema: unknown;
     client.setRequestHandler(ElicitRequestSchema, (request) => {
       if (request.params.mode !== "form") throw new Error("Expected form elicitation.");
       prompt = request.params.message;
-      return Promise.resolve({ action: "accept" as const, content: { approve: true } });
+      requestedSchema = request.params.requestedSchema;
+      return Promise.resolve({ action: "accept" as const, content: {} });
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -178,6 +219,39 @@ describe("MCP server", () => {
     expect(spies.sendMessage).toHaveBeenCalledOnce();
   });
 
+  it("treats native Skip as cancellation and never calls Mail", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    const client = new Client(
+      { name: "mailbridge-test", version: "1.0.0" },
+      { capabilities: { elicitation: { form: {} } } },
+    );
+    client.setRequestHandler(ElicitRequestSchema, () =>
+      Promise.resolve({ action: "decline" as const }),
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+
+    const result = await client.callTool({
+      name: "mail_send_message",
+      arguments: {
+        accountId: "account:1",
+        from: "sender@example.com",
+        to: ["recipient@example.com"],
+        body: "Do not send",
+        confirmed: true,
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: { code: "SEND_NOT_CONFIRMED" },
+    });
+    expect(spies.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("quotes untrusted reply context without allowing confirmation-prompt spoofing", async () => {
     const { bridge, spies } = createFakeBridge();
     spies.getMessage.mockResolvedValue({
@@ -192,7 +266,7 @@ describe("MCP server", () => {
     client.setRequestHandler(ElicitRequestSchema, (request) => {
       if (request.params.mode !== "form") throw new Error("Expected form elicitation.");
       prompt = request.params.message;
-      return Promise.resolve({ action: "accept" as const, content: { approve: true } });
+      return Promise.resolve({ action: "accept" as const, content: {} });
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -223,9 +297,86 @@ describe("MCP server", () => {
     expect(spies.sendReply).toHaveBeenCalledOnce();
   });
 
-  it("fails closed when the client does not support form elicitation", async () => {
+  it("serves a modern inline access card and saves only through its private proposal", async () => {
     const { bridge, spies } = createFakeBridge();
-    const server = createMailbridgeServer(bridge, { ...config, mode: "prompted" });
+    spies.listAccounts.mockResolvedValue([
+      { id: "account:1", name: "Support", emailAddresses: ["support@vajeh.app"], enabled: true },
+    ]);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-server-prefs-"));
+    tempDirs.push(dir);
+    const localPreferencesContext: LocalPreferencesContext = {
+      path: path.join(dir, "preferences.json"),
+      envOverrides: { mode: true, allowedAccounts: false },
+    };
+    const server = createMailbridgeServer(
+      bridge,
+      { ...config, mode: "prompted" },
+      { localPreferencesContext },
+    );
+    const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+
+    const prepared = await client.callTool({
+      name: "mailbridge_set_access_preferences",
+      arguments: {
+        mode: "prompted",
+        allowedAccounts: ["support@vajeh.app"],
+      },
+    });
+
+    expect(prepared.isError).not.toBe(true);
+    expect(prepared.structuredContent).toMatchObject({
+      ok: true,
+      data: {
+        status: "awaiting-user",
+        proposedMode: "prompted",
+        proposedAllowedAccounts: ["support@vajeh.app"],
+        shadowedByEnvironment: { mode: true, allowedAccounts: false },
+      },
+    });
+    await expect(fs.access(localPreferencesContext.path)).rejects.toThrow();
+
+    const resource = await client.readResource({ uri: "ui://mailbridge/access-preferences-v1.html" });
+    expect(resource.contents).toHaveLength(1);
+    const firstResource = resource.contents[0];
+    if (firstResource === undefined) throw new Error("Missing access card resource.");
+    expect(firstResource).toMatchObject({ mimeType: "text/html;profile=mcp-app" });
+    const html = "text" in firstResource ? firstResource.text : "";
+    expect(html).toContain("Review before saving");
+    expect(html).toContain("Save access");
+    expect(html).toContain("mailbridge_commit_access_preferences");
+    expect(html).not.toContain("Skip");
+    expect(html).not.toContain("Continue");
+
+    const privateMeta = prepared._meta?.["mailbridge/accessProposal"] as { proposalId?: unknown } | undefined;
+    expect(privateMeta?.proposalId).toBeTypeOf("string");
+    expect(JSON.stringify(prepared.structuredContent)).not.toContain(privateMeta?.proposalId);
+    const committed = await client.callTool({
+      name: "mailbridge_commit_access_preferences",
+      arguments: { proposalId: privateMeta?.proposalId },
+    });
+    expect(committed.structuredContent).toMatchObject({
+      ok: true,
+      data: { saved: true, mode: "prompted", allowedAccounts: ["support@vajeh.app"] },
+    });
+    await expect(fs.readFile(localPreferencesContext.path, "utf8")).resolves.toContain('"mode": "prompted"');
+  });
+
+  it("still fails closed for sends without elicitation while access review remains non-mutating", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-server-prefs-"));
+    tempDirs.push(dir);
+    const localPreferencesContext: LocalPreferencesContext = {
+      path: path.join(dir, "preferences.json"),
+      envOverrides: { mode: false, allowedAccounts: false },
+    };
+    const server = createMailbridgeServer(
+      bridge,
+      { ...config, mode: "prompted" },
+      { localPreferencesContext },
+    );
     const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -248,6 +399,20 @@ describe("MCP server", () => {
       error: { code: "CONFIRMATION_UNAVAILABLE" },
     });
     expect(spies.sendMessage).not.toHaveBeenCalled();
+
+    const preferences = await client.callTool({
+      name: "mailbridge_set_access_preferences",
+      arguments: {
+        mode: "drafts",
+        allowedAccounts: ["sender@example.com"],
+      },
+    });
+
+    expect(preferences.structuredContent).toMatchObject({
+      ok: true,
+      data: { status: "awaiting-user", proposedMode: "drafts" },
+    });
+    await expect(fs.access(localPreferencesContext.path)).rejects.toThrow();
   });
 
 });

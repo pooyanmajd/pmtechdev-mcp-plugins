@@ -131,7 +131,7 @@ export const createForwardDraftInputSchema = z
   .refine(({ to }) => to.length > 0, { message: "At least one To recipient is required.", path: ["to"] });
 
 const confirmedSend = z.literal(true).describe(
-  "Must be true only after the user has explicitly approved the exact recipients, subject, and body.",
+  "In prompted mode, set true once the exact send fields are resolved so Mailbridge can request its native final approval. In direct send mode, set true only after the exact content was shown and approved in chat.",
 );
 
 const substantiveBody = z
@@ -205,8 +205,8 @@ export const previewOutboundInputSchema = z.discriminatedUnion("kind", [
 
 export const mailbridgeGetAccessPreferencesInputSchema = z.object({}).strict();
 
-const confirmedAccessPreferences = z.literal(true).describe(
-  "Must be true only after the exact mode and account list above were shown to and approved by the user in chat.",
+const legacyConfirmedAccessPreferences = z.literal(true).optional().describe(
+  "Deprecated compatibility flag. Omit it: Mailbridge opens a secure inline access card and saves only when the user presses its Save access button.",
 );
 
 // Deliberately excludes "send": a model-supplied confirmed:true is not an independently
@@ -226,7 +226,16 @@ export const mailbridgeSetAccessPreferencesInputSchema = z
       .describe(
         "Complete replacement list of Mail.app account email addresses to allow. Replaces any previously saved list; this is not a delta/append.",
       ),
-    confirmed: confirmedAccessPreferences,
+    confirmed: legacyConfirmedAccessPreferences,
+  })
+  .strict();
+
+export const mailbridgeCommitAccessPreferencesInputSchema = z
+  .object({
+    proposalId: z
+      .string()
+      .uuid()
+      .describe("Opaque, short-lived proposal identifier delivered only to the Mailbridge access card."),
   })
   .strict();
 
@@ -257,6 +266,7 @@ export const TOOL_NAMES = [
   "mail_preview_outbound",
   "mailbridge_get_access_preferences",
   "mailbridge_set_access_preferences",
+  "mailbridge_commit_access_preferences",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -277,4 +287,5 @@ export const inputSchemas = {
   mail_preview_outbound: previewOutboundInputSchema,
   mailbridge_get_access_preferences: mailbridgeGetAccessPreferencesInputSchema,
   mailbridge_set_access_preferences: mailbridgeSetAccessPreferencesInputSchema,
+  mailbridge_commit_access_preferences: mailbridgeCommitAccessPreferencesInputSchema,
 } as const satisfies Record<ToolName, z.ZodType>;
