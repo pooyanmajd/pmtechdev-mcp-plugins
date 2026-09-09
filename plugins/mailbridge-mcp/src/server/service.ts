@@ -155,6 +155,35 @@ export class MailbridgeToolService {
     }
   }
 
+  public async invokeAccessPreferencesWithConfirmation(
+    rawInput: unknown,
+    confirm?: (proposal: AccessPreferencesProposal) => Promise<boolean>,
+  ): Promise<CallToolResult> {
+    let proposalId: string | undefined;
+    try {
+      if (confirm === undefined) throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      const prepared = await this.prepareAccessPreferences(rawInput);
+      proposalId = prepared.proposalId;
+      let approved: boolean;
+      try {
+        approved = await this.confirmationQueue.run(
+          () => confirm(prepared.proposal),
+          () => new MailbridgeError("CONFIRMATION_BUSY"),
+        );
+      } catch (error: unknown) {
+        if (error instanceof MailbridgeError && error.code === "CONFIRMATION_BUSY") throw error;
+        throw new MailbridgeError("CONFIRMATION_UNAVAILABLE");
+      }
+      if (!approved) throw new MailbridgeError("PREFERENCES_NOT_CONFIRMED");
+      return success(await this.commitAccessPreferences({ proposalId }));
+    } catch (error: unknown) {
+      return failure(error);
+    } finally {
+      // Native forms never expose a reusable proposal or an app-only finalizer.
+      if (proposalId !== undefined) this.accessProposals.delete(proposalId);
+    }
+  }
+
   private requireDraftsMode(): void {
     if (this.config.mode === "read-only") {
       throw new MailbridgeError("READ_ONLY");

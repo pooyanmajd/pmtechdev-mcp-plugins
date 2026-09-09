@@ -203,4 +203,21 @@ describe("access card host lifecycle", () => {
     expect(cancelled.element("save").disabled).toBe(true);
     expect(cancelled.element("title").textContent).toBe("No changes saved");
   });
+
+  it("binds the review to one proposal so later host updates cannot substitute its fields", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue(saved);
+    const ui = harness({ callTool });
+    await ui.globals({ toolOutput: prepared().structuredContent, toolResponseMetadata: prepared()._meta });
+    await ui.globals({ toolOutput: { ok: true, data: {
+      ...prepared().structuredContent.data, proposedMode: "prompted", proposedAllowedAccounts: ["different@example.com"],
+    } }, theme: "dark" });
+    expect(ui.element("mode-name").textContent).toBe("Read + drafts");
+    expect(ui.element("accounts").children.map(({ textContent }) => textContent)).toEqual(["person@example.com"]);
+    expect(ui.document.documentElement.dataset.theme).toBe("dark");
+    await ui.element("save").click();
+    expect(callTool).toHaveBeenCalledExactlyOnceWith("mailbridge_commit_access_preferences", {
+      proposalId: prepared()._meta["mailbridge/accessProposal"].proposalId,
+    });
+  });
 });

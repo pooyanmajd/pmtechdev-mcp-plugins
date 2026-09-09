@@ -22,6 +22,10 @@ const config: MailbridgeConfig = {
   searchBudgetMs: 12_000,
 };
 
+const appCapabilities = {
+  extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } },
+};
+
 describe("MCP server", () => {
   const closeCallbacks: Array<() => Promise<void>> = [];
   const tempDirs: string[] = [];
@@ -34,7 +38,7 @@ describe("MCP server", () => {
   async function connect(overrideConfig: MailbridgeConfig = config) {
     const { bridge, spies } = createFakeBridge();
     const server = createMailbridgeServer(bridge, overrideConfig);
-    const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
+    const client = new Client({ name: "mailbridge-test", version: "1.0.0" }, { capabilities: appCapabilities });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     closeCallbacks.push(async () => client.close(), async () => server.close());
@@ -209,6 +213,7 @@ describe("MCP server", () => {
     });
 
     expect(result.isError).not.toBe(true);
+    expect(requestedSchema).toEqual({ type: "object", properties: {} });
     expect(prompt).toContain("Send message");
     expect(prompt).toContain("From     sender@example.com");
     expect(prompt).toContain("To       recipient@example.com");
@@ -313,7 +318,7 @@ describe("MCP server", () => {
       { ...config, mode: "prompted" },
       { localPreferencesContext },
     );
-    const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
+    const client = new Client({ name: "mailbridge-test", version: "1.0.0" }, { capabilities: appCapabilities });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     closeCallbacks.push(async () => client.close(), async () => server.close());
@@ -364,6 +369,66 @@ describe("MCP server", () => {
     await expect(fs.readFile(localPreferencesContext.path, "utf8")).resolves.toContain('"mode": "prompted"');
   });
 
+  it.each(["accept", "decline", "cancel"] as const)("uses exact native preference confirmation without MCP Apps: %s", async (action) => {
+    const { bridge } = createFakeBridge();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-native-prefs-"));
+    tempDirs.push(dir);
+    const preferencesPath = path.join(dir, "preferences.json");
+    const server = createMailbridgeServer(bridge, config, { localPreferencesContext: {
+      path: preferencesPath, envOverrides: { mode: true, allowedAccounts: false },
+    } });
+    const client = new Client({ name: "native-form-test", version: "1.0.0" }, {
+      capabilities: { elicitation: { form: {} } },
+    });
+    let prompt = "";
+    client.setRequestHandler(ElicitRequestSchema, (request) => {
+      if (request.params.mode !== "form") throw new Error("Expected a form");
+      prompt = request.params.message;
+      expect(request.params.requestedSchema).toEqual({ type: "object", properties: {} });
+      return { action };
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+    const tools = (await client.listTools()).tools;
+    expect(tools.some(({ name }) => name === "mailbridge_commit_access_preferences")).toBe(false);
+    expect(tools.find(({ name }) => name === "mailbridge_set_access_preferences")).toMatchObject({
+      annotations: { readOnlyHint: false, destructiveHint: true },
+      _meta: { "anthropic/requiresUserInteraction": true },
+    });
+    const result = await client.callTool({ name: "mailbridge_set_access_preferences", arguments: {
+      mode: "drafts", allowedAccounts: ["PERSON@example.com"],
+    } });
+    expect(prompt).toContain('Accounts (complete replacement): ["person@example.com"]');
+    expect(prompt).toContain("Create drafts: yes");
+    expect(prompt).toContain("Send mail: no");
+    expect(prompt).toContain("launch mode overrides");
+    expect(result._meta).toBeUndefined();
+    if (action === "accept") {
+      expect(result.structuredContent).toMatchObject({ ok: true, data: {
+        saved: true, mode: "drafts", allowedAccounts: ["person@example.com"], effectiveImmediately: false,
+      } });
+      await expect(fs.readFile(preferencesPath, "utf8")).resolves.toContain('"mode": "drafts"');
+    } else {
+      expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "PREFERENCES_NOT_CONFIRMED" } });
+      await expect(fs.access(preferencesPath)).rejects.toThrow();
+    }
+  });
+
+  it("fails clearly before accessing Mail when neither Apps nor confirmation forms are available", async () => {
+    const { bridge, spies } = createFakeBridge();
+    const server = createMailbridgeServer(bridge, config);
+    const client = new Client({ name: "text-only", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    closeCallbacks.push(async () => client.close(), async () => server.close());
+    const result = await client.callTool({ name: "mailbridge_set_access_preferences", arguments: {
+      mode: "drafts", allowedAccounts: ["person@example.com"],
+    } });
+    expect(result.structuredContent).toMatchObject({ ok: false, error: { code: "CONFIRMATION_UNAVAILABLE" } });
+    expect(spies.listAccounts).not.toHaveBeenCalled();
+  });
+
   it("still fails closed for sends without elicitation while access review remains non-mutating", async () => {
     const { bridge, spies } = createFakeBridge();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mailbridge-server-prefs-"));
@@ -377,7 +442,7 @@ describe("MCP server", () => {
       { ...config, mode: "prompted" },
       { localPreferencesContext },
     );
-    const client = new Client({ name: "mailbridge-test", version: "1.0.0" });
+    const client = new Client({ name: "mailbridge-test", version: "1.0.0" }, { capabilities: appCapabilities });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     closeCallbacks.push(async () => client.close(), async () => server.close());

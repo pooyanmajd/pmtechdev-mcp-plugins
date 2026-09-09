@@ -4,6 +4,10 @@ All notable workspace, marketplace, and shared-kit changes are recorded here. In
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+- Mailbridge gains reliable inline access review, native confirmation fallback, bounded save requests, immutable review proposals, and patched dependencies. Existing 0.5.0 account-scoping and direct-send safeguards remain in place.
+
 ## [0.5.0] - 2026-08-17
 
 - Added a Grok Build marketplace catalog (`.grok-plugin/marketplace.json`), Grok plugin manifests, and [Grok install documentation](docs/GROK.md). grok.com public-HTTP connectors are explicitly out of scope.

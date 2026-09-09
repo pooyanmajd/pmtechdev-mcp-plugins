@@ -4,24 +4,23 @@ All notable changes to this project will be documented here. The format is based
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+### Added
+
+- Responsive access review with account chips, a capability ledger, relevant warnings, light/dark themes, and explicit Save/Cancel actions. MCP Apps hosts receive the inline card; other hosts use a native exact-scope confirmation form. Hosts supporting neither fail clearly without saving.
+- App-only access commits use private, short-lived proposal identifiers. Native form acceptance saves the same immutable proposal without exposing the commit tool to non-Apps clients. Neither flow can configure direct send mode or its environment allowlist.
+
 ### Fixed
 
-- Access cards now consume settings and private proposal metadata delivered after startup through OpenAI host updates. The private save tool also declares widget access for compatibility with those hosts.
-- The card waits for a usable host connection, bounds host requests to 30 seconds, prevents duplicate saves while a request is pending, and reports success only when the tool explicitly confirms `saved: true`. Missing responses produce a visible error without automatically retrying the write.
-- Committing a proposal no longer evicts a valid card when all six proposal slots are occupied. Eviction occurs only when preparing an additional card, and proposals expire at their ten-minute deadline.
-
-### Security
-
-- Replaced access-preference form elicitation with a two-step MCP Apps flow. `mailbridge_set_access_preferences` is now a read-only render tool; only the app-visible, model-hidden `mailbridge_commit_access_preferences` tool can persist the exact short-lived proposal after the user presses **Save access**. Direct `send` mode remains excluded.
-- Proposal identifiers are random, bounded, expire after ten minutes, stay in result `_meta` hidden from the model, and are idempotent after a successful commit. Invalid, expired, or evicted proposals write nothing.
+- Delayed host data now populates the card. Save waits for a callable host bridge, times out after 30 seconds without an automatic retry, and reports success only for an explicit `saved: true` result. Duplicate notifications cannot enable concurrent saves or substitute different reviewed fields.
+- All six retained proposals remain usable; only a seventh proposal evicts the oldest. Proposals expire at ten minutes. The card reports its height to avoid clipped controls in embedded hosts.
+- Updated Vitest and compatible transitive dependencies to patched versions after the release dependency audit.
 
 ### Changed
 
-- Prompted sends now go directly from a complete send instruction to one compact native exact-content dialog; the bundled skill and tool descriptions no longer request a redundant chat approval first. The dialog maps From/To/CC/BCC/Subject/Message, native **Continue** sends once, and native **Skip** cancels without calling Mail.
-- Send confirmations no longer add a checkbox inside the native dialog. Exact untrusted values remain JSON-quoted so mail content cannot forge trusted labels or controls.
-- Exact account/mode selections now open a responsive Mailbridge-branded inline card with account chips, a four-capability ledger, relevant warnings, explicit **Cancel** and **Save access** actions, light/dark themes, keyboard focus, reduced-motion support, and a compact 375px layout.
-- The old `confirmed: true` input remains optional only for backward compatibility; it does not approve or commit a proposal.
-
+- Prompted sends use one native final confirmation with the existing compose-style exact-content preview. No extra checkbox or preliminary chat-approval round trip is required. Direct send mode still requires exact chat approval and environment-origin mode and account allowlist.
+- The preferences `confirmed` flag is optional for compatibility and never authorizes a save by itself.
 
 ## [0.5.0] - 2026-08-17
 

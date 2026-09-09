@@ -91,6 +91,13 @@ const REQUIRES_USER_INTERACTION_META = Object.freeze({
   "anthropic/requiresUserInteraction": true,
 });
 
+export const ACCESS_PREFERENCES_FORM_OPTIONS = Object.freeze({
+  title: "Save Access Preferences",
+  description: "Review and save one exact Mailbridge mode and complete account allowlist through a native confirmation form. Call directly after the user selects the values; do not ask for duplicate chat confirmation. Only an accepted exact-scope form saves anything. Cannot configure direct send mode or its environment allowlist. Saved settings apply after reconnecting; explicit environment variables always win.",
+  annotations: PREFERENCES_ANNOTATIONS,
+  _meta: REQUIRES_USER_INTERACTION_META,
+});
+
 export const ACCESS_PREFERENCES_UI_URI = "ui://mailbridge/access-preferences-v1.html";
 
 const ACCESS_PREFERENCES_REVIEW_META = Object.freeze({

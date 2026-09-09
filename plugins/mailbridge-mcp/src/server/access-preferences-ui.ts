@@ -465,6 +465,7 @@ export const ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
       let settled = false;
       let saving = false;
       let saveAttempted = false;
+      let lastHeight;
 
       const byId = (id) => document.getElementById(id);
       const saveButton = byId('save');
@@ -544,6 +545,15 @@ export const ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
 
       function notify(method, params) {
         window.parent.postMessage({ jsonrpc: '2.0', method, ...(params === undefined ? {} : { params }) }, '*');
+      }
+
+      function reportSize() {
+        if (!connected || !document.body) return;
+        const height = Math.ceil(document.body.getBoundingClientRect().height);
+        if (height > 0 && height !== lastHeight) {
+          lastHeight = height;
+          notify('ui/notifications/size-changed', { height });
+        }
       }
 
       function applyHostContext(context) {
@@ -659,7 +669,7 @@ export const ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
       }
 
       function consumeToolResult(result) {
-        if (settled || saving) return;
+        if (settled || saving || (proposal && proposalId)) return;
         const nextProposal = normalizeStructured(result);
         const nextProposalId = extractProposalId(result, 0);
         if (nextProposal) renderProposal(nextProposal);
@@ -755,7 +765,7 @@ export const ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
       function consumeOpenAiGlobals(globals) {
         if (!globals) return;
         applyHostContext(globals);
-        if (settled || saving) return;
+        if (settled || saving || (proposal && proposalId)) return;
         const next = normalizeStructured(globals.toolOutput);
         if (next) renderProposal(next);
         if (globals.toolResponseMetadata) {
@@ -770,15 +780,23 @@ export const ACCESS_PREFERENCES_UI_HTML = String.raw`<!doctype html>
       }, { passive: true });
       consumeOpenAiGlobals(window.openai);
 
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(reportSize).observe(document.body);
+      }
+
       request('ui/initialize', {
         appCapabilities: {},
         appInfo: { name: 'Mailbridge access', version: '1.0.0' },
         protocolVersion: PROTOCOL_VERSION
       }).then((result) => {
-        connected = true;
+        connected = Boolean(result && result.hostCapabilities && result.hostCapabilities.serverTools);
         applyHostContext(result && result.hostContext);
         notify('ui/notifications/initialized');
+        if (!connected && !(window.openai && typeof window.openai.callTool === 'function')) {
+          setFatal('This host cannot call the secure save tool. Reopen this card in a host that supports app tool calls.');
+        }
         updateReadyState();
+        reportSize();
       }).catch((error) => {
         connected = false;
         if (!settled && !(window.openai && typeof window.openai.callTool === 'function')) {

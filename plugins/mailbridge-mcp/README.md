@@ -109,10 +109,10 @@ codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref main
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
-For an immutable installation reviewed as Mailbridge `0.5.0`, pin the marketplace to its release tag:
+For an immutable installation reviewed as Mailbridge `0.6.0`, pin the marketplace to its release tag:
 
 ```bash
-codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.5.0
+codex plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins --ref v0.6.0
 codex plugin add mailbridge-mcp@pmtechdev
 ```
 
@@ -125,7 +125,7 @@ The bundled marketplace registrations intentionally expose all accounts configur
 The native Claude Code manifest launches the same committed bundle through `CLAUDE_PLUGIN_ROOT`, loads the bundled skill, and selects `MAILBRIDGE_MODE=prompted` so every send requires a fresh form elicitation of the reviewed fields. Install the immutable release with:
 
 ```bash
-claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.5.0
+claude plugin marketplace add pooyanmajd/pmtechdev-mcp-plugins@v0.6.0
 claude plugin install mailbridge-mcp@pmtechdev
 ```
 
@@ -160,7 +160,7 @@ grok mcp add mailbridge \
   -- node /absolute/path/to/pmtechdev-mcp-plugins/plugins/mailbridge-mcp/dist/cli.js
 ```
 
-Grok Build can add this repository as a marketplace via `.grok-plugin/marketplace.json` and install `mailbridge-mcp`. The bundled Grok manifest resolves the committed bundle through `GROK_PLUGIN_ROOT` and starts in `prompted` mode. Call `mail_preview_outbound` before every send so the review card is identical to Codex and Claude. If the Grok surface cannot render MCP form elicitation, sends fail closed; drafts still work.
+Grok Build can add this repository as a marketplace via `.grok-plugin/marketplace.json` and install `mailbridge-mcp`. The bundled Grok manifest resolves the committed bundle through `GROK_PLUGIN_ROOT` and starts in `prompted` mode. The prompted send dialog uses the same compose review as Codex and Claude; `mail_preview_outbound` is also available for draft or direct-send review. If the Grok surface cannot render MCP form elicitation, sends fail closed; drafts still work.
 
 ## Allow macOS Automation
 
@@ -200,7 +200,7 @@ Keep secrets out of these variables. Mailbridge never needs an email password, a
 | `prompted` (marketplace default) | Yes | Yes | Yes | Yes, after MCP elicitation of the reviewed fields |
 | `send` | Yes | Yes | Yes | Yes, confirmed and attachment-free only |
 
-`full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the send confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. Ordinary addresses, subjects, and body lines render unquoted; values with control characters, newlines, or header-impersonating prefixes are JSON-encoded so mail content cannot forge trusted labels or delimiters. New-message subjects are exact; reply cards label the selected source subject as `Reply to` because Mail generates the actual reply subject. `send` is intended for reviewed direct registrations and requires an explicit environment account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
+A complete prompted-send instruction opens one native final review; do not require an extra chat approval or checkbox. Native **Continue** approves and **Skip** cancels. `full` intentionally retains its v0.1 meaning. `prompted` sends only after a compatible MCP client displays and accepts the send confirmation; clients without form elicitation receive `CONFIRMATION_UNAVAILABLE`. A client can also advertise elicitation support yet resolve the form with a non-accept action without ever rendering it — the Claude Code desktop app currently does this (verified 2026-07-18 against 0.4.1), which surfaces as `SEND_NOT_CONFIRMED`; at the protocol level that is indistinguishable from a human decline, so Mailbridge fails closed. Ordinary addresses, subjects, and body lines render unquoted; values with control characters, newlines, or header-impersonating prefixes are JSON-encoded so mail content cannot forge trusted labels or delimiters. New-message subjects are exact; reply cards label the selected source subject as `Reply to` because Mail generates the actual reply subject. `send` is intended for reviewed direct registrations and requires an explicit environment account allowlist. No mode permits deletion, moving, mailbox administration, rule changes, credential access, arbitrary automation, bulk sending, forward sending, attachment sending, or sending an arbitrary edited draft.
 
 To enable sending from a reviewed direct MCP registration, restart Mailbridge with both settings:
 
@@ -213,13 +213,13 @@ Do not put passwords or provider tokens in either value. This paragraph applies 
 
 ### Local access preferences
 
-An explicitly set `MAILBRIDGE_MODE` or `MAILBRIDGE_ALLOWED_ACCOUNTS` environment variable always wins. When a variable is left unset, Mailbridge falls back to a local, per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under `XDG_CONFIG_HOME` if you set it to an absolute path), written with `0600` permissions and never part of this git repository or the shared plugin package. Use `mailbridge_get_access_preferences` and `mailbridge_set_access_preferences` to read and save it — an assistant using Mailbridge should list your real accounts, ask which to allow and at what mode, and open that exact choice in Mailbridge's inline access card rather than editing any configuration file directly. Preparing the card is read-only and writes nothing. The card shows the account scope, a capability ledger, application timing, and only relevant verification or launch-setting warnings. Its **Save access** button invokes the app-only `mailbridge_commit_access_preferences` tool, hidden from the model, with a short-lived private proposal identifier. Cancel simply discards the proposal. The change takes effect only after restart or reconnect.
+Mailbridge reads a per-user preferences file at `~/Library/Application Support/mailbridge-mcp/preferences.json` (or under an absolute `XDG_CONFIG_HOME`). The file has `0600` permissions and never ships in the plugin. Explicit environment values always win. Direct `send` mode and its allowlist must both come from the environment; local preferences cannot grant that authority.
 
-`mailbridge_set_access_preferences` still cannot propose `send` mode. The access card can save only the exact `read-only`/`drafts`/`full`/`prompted` replacement it displays; enabling standing direct-send authority remains a separate manual environment-variable change you make yourself (see [Configuration](#configuration) above).
+Use `mailbridge_get_access_preferences` to compare saved values with the running configuration. After selecting an exact mode and complete account list, call `mailbridge_set_access_preferences` once without a duplicate chat-approval step. On MCP Apps hosts it prepares a responsive inline review card and writes nothing. The card shows account scope, capabilities, application timing, and relevant verification or launch-setting warnings. **Save access** calls the app-only `mailbridge_commit_access_preferences` with a private, ten-minute proposal identifier. On hosts without MCP Apps, a native form presents the same scope and saves only after acceptance. Clients supporting neither interface receive `CONFIRMATION_UNAVAILABLE` without saving.
 
-The access card requires a host that renders MCP Apps and permits app-only tool calls. If the card cannot connect or a save receives no response within 30 seconds, it displays an error. A save timeout does not prove the write failed: use `mailbridge_get_access_preferences` to check the saved values before retrying. The card reports **Access saved** only after an explicit successful save result.
+Preferences can save only `read-only`, `drafts`, `full`, or `prompted`. Both interfaces replace the entire account list, and saved changes apply after restart or reconnect. Bundled host manifests set `MAILBRIDGE_MODE=prompted`, so their launch mode overrides a saved mode until the user removes that override from a registration they control.
 
-The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MODE=prompted`, so a saved local `mode` only takes effect for registrations that leave that variable unset (for example, a direct MCP registration you control).
+Card requests time out after 30 seconds with a visible error and no automatic retry. A timeout does not prove the write failed: use `mailbridge_get_access_preferences` to check before retrying. **Access saved** appears only after an explicit successful save result. Cancelling before Save writes nothing; closing after an uncertain save does not claim the settings were unchanged.
 
 ## MCP tools
 
@@ -239,7 +239,7 @@ The bundled Codex and Claude Code marketplace manifests hardcode `MAILBRIDGE_MOD
 | `mail_send_message` | Atomically create and submit one confirmed attachment-free new message. | `prompted` / `send` |
 | `mail_send_reply` | Atomically create and submit one confirmed attachment-free reply or reply-all after exact expected-recipient matching. | `prompted` / `send` |
 | `mailbridge_get_access_preferences` | Read locally saved mode/account preferences (if any) alongside what this running server is actually using right now. | Any mode |
-| `mailbridge_set_access_preferences` | Prepare a modern inline access card for an exact mode/account selection. This call is read-only and does not save by itself. | Any mode |
+| `mailbridge_set_access_preferences` | Review an exact mode/account selection in an inline card, or save after native form acceptance on hosts without MCP Apps. | Any mode |
 | `mailbridge_commit_access_preferences` | App-only finalizer called by the access card's **Save access** button with a short-lived private proposal. Hidden from the model. | Any mode, app only |
 
 Sending edited drafts, forwards, attachments, or batches—and permanent deletion, mailbox/rule administration, arbitrary scripting, remote hosting, background monitoring, and credential management—remain out of scope.

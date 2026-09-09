@@ -71,7 +71,7 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 
 **Request:** the user gives a complete direct instruction to send one reply with an exact substantive body.
 
-**Expected:** `mail_send_reply` first presents a compact MCP form elicitation that looks like a Gmail compose review: From / To / Cc / Bcc / Reply to / Reply, then a boxed Message. `Reply to` is the selected source-message subject; the card says Mail generates the actual reply subject. Ordinary values render unquoted; hostile headers and body lines JSON-encode so they cannot forge trusted labels. Only an accepted confirmation can invoke the JXA dispatcher, which replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`; an unavailable or declined form fails with `CONFIRMATION_UNAVAILABLE` or `SEND_NOT_CONFIRMED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
+**Expected:** `mail_send_reply` first presents a compact MCP form elicitation that looks like a Gmail compose review: From / To / Cc / Bcc / Reply to / Reply, then a boxed Message. `Reply to` is the selected source-message subject; the card says Mail generates the actual reply subject. Ordinary values render unquoted; hostile headers and body lines JSON-encode so they cannot forge trusted labels. The native acceptance action is the sole final approval; no extra checkbox or preliminary chat confirmation is required. Only an accepted confirmation can invoke the JXA dispatcher, which replaces quoted content with the approved body, verifies Mail resolved the same recipients, and submits one attachment-free reply atomically. A mismatch fails with `SEND_TARGET_CHANGED`; an unavailable or declined form fails with `CONFIRMATION_UNAVAILABLE` or `SEND_NOT_CONFIRMED`. The result reports only that Mail accepted it for sending. No draft-send, forward-send, attachment-send, or bulk-send path exists.
 
 ### P5 — Broad search reports incompleteness
 
@@ -96,6 +96,12 @@ Each fixture includes two accounts, opaque IDs, several mailboxes, messages with
 **Given:** read-only, drafts, or legacy full mode; send mode without an account allowlist; prompted mode with no form-elicitation support or a declined confirmation; or a send input without `confirmed: true` and a substantive body.
 
 **Expected:** no send reaches the bridge. Prompted mode requires an accepted MCP confirmation of the reviewed fields, while direct send mode requires a non-empty environment allowlist; both require exact confirmation of the sender, recipients, body, and new-message subject or reply-to context. `mail_send_draft`, forward sending, attachment sending, and bulk sending remain absent.
+
+### N2a — Saved permission replacement requires the host-supported review
+
+**Given:** an exact mode and complete account selection.
+
+**Expected:** an MCP Apps host renders the inline card without writing; only its Save button calls the app-only finalizer with the private proposal. A host without Apps receives a native form containing the exact scope and saves only on acceptance; it never advertises the private finalizer. Decline/cancel save nothing. A host with neither capability receives `CONFIRMATION_UNAVAILABLE` before account verification. Direct send mode remains unavailable through preferences.
 
 ### N2b — Unknown send outcome is not retried
 

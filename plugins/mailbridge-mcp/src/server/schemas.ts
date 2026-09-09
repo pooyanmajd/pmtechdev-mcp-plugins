@@ -206,7 +206,7 @@ export const previewOutboundInputSchema = z.discriminatedUnion("kind", [
 export const mailbridgeGetAccessPreferencesInputSchema = z.object({}).strict();
 
 const legacyConfirmedAccessPreferences = z.literal(true).optional().describe(
-  "Deprecated compatibility flag. Omit it: Mailbridge opens a secure inline access card and saves only when the user presses its Save access button.",
+  "Deprecated compatibility flag. Omit it: Mailbridge requires approval through its inline access card or native confirmation form before saving.",
 );
 
 // Deliberately excludes "send": a model-supplied confirmed:true is not an independently
