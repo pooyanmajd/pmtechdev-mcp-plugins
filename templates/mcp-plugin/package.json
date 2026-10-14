@@ -16,7 +16,7 @@
     "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@pmtechdev/mcp-kit": "0.1.0",
     "@types/node": "24.10.1",
     "tsup": "8.5.1",
